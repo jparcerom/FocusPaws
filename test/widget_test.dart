@@ -16,9 +16,11 @@ void main() {
     expect(find.text('FocusPaws'), findsOneWidget);
     expect(find.text('¡Qué bueno tenerte aquí!'), findsOneWidget);
     expect(find.byType(GridView), findsOneWidget);
+    expect(UserAvatar.values, hasLength(6));
     for (final avatar in UserAvatar.values) {
       expect(find.byKey(Key('profile-avatar-${avatar.id}')), findsOneWidget);
     }
+    expect(find.byKey(const Key('profile-avatar-panda')), findsOneWidget);
 
     tester
             .widget<TextField>(find.byKey(const Key('profile-name-field')))
@@ -37,16 +39,29 @@ void main() {
     expect(profileStore.profile?.name, 'Lucía');
     expect(profileStore.profile?.avatar, UserAvatar.fox);
     expect(find.text('¡Hola, Lucía!'), findsOneWidget);
-    expect(find.text('🦊'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('progress-pet-avatar'))).data,
+      '🦊',
+    );
     expect(find.text('Foxy 🐾'), findsOneWidget);
     expect(find.byKey(const Key('progress-pet-avatar')), findsOneWidget);
     expect(find.byKey(const Key('profile-avatar-display')), findsNothing);
 
     await tester.pumpWidget(
-      FocusPawsApp(profileStore: profileStore, progressStore: progressStore),
+      FocusPawsApp(
+        key: const ValueKey('restarted-app'),
+        profileStore: profileStore,
+        progressStore: progressStore,
+      ),
     );
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('select-profile-default')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('select-profile-default')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tu espacio, Lucía'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('enter-tasks-button')));
+    await tester.pumpAndSettle();
     expect(find.text('¡Hola, Lucía!'), findsOneWidget);
     expect(find.text('Foxy 🐾'), findsOneWidget);
     expect(find.text('¡Qué bueno tenerte aquí!'), findsNothing);
@@ -58,6 +73,8 @@ void main() {
     expect(UserAvatar.fox.petName, 'Foxy');
     expect(UserAvatar.rabbit.petName, 'Bunny');
     expect(UserAvatar.bear.petName, 'Bruno');
+    expect(UserAvatar.panda.petName, 'Panda');
+    expect(UserAvatar.panda.emoji, '🐼');
   });
 
   testWidgets('requires a name before saving the profile', (tester) async {
@@ -75,6 +92,133 @@ void main() {
 
     expect(find.text('Escribe tu nombre para continuar.'), findsOneWidget);
     expect(profileStore.profile, isNull);
+  });
+
+  testWidgets('edits the selected profile without losing its task progress', (
+    tester,
+  ) async {
+    final profileStore = _MemoryUserProfileStore(
+      profile: const UserProfile(name: 'Alex', avatar: UserAvatar.cat),
+    );
+    final progressStore = _MemoryFocusTasksProgressStore()
+      ..progress = FocusTasksProgress(
+        tasks: [
+          const FocusTaskProgress(
+            id: 4,
+            title: 'Tarea persistente',
+            isCompleted: false,
+            hasReceivedReward: false,
+          ),
+        ],
+        points: 0,
+      );
+
+    await tester.pumpWidget(
+      FocusPawsApp(profileStore: profileStore, progressStore: progressStore),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('select-profile-default')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-name-option')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('profile-name-field')),
+      'Lucía',
+    );
+    await tester.tap(find.byKey(const Key('save-profile-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tu espacio, Lucía'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('edit-avatar-option')));
+    await tester.pumpAndSettle();
+    await _scrollToFinder(tester, find.byKey(const Key('profile-avatar-fox')));
+    await tester.tap(find.byKey(const Key('profile-avatar-fox')));
+    await tester.tap(find.byKey(const Key('save-profile-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('🦊'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('enter-tasks-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('¡Hola, Lucía!'), findsOneWidget);
+    expect(find.text('Tarea persistente'), findsOneWidget);
+    expect(progressStore.progress.points, 0);
+  });
+
+  testWidgets('keeps task progress separate between user profiles', (
+    tester,
+  ) async {
+    final profileStore = _MemoryUserProfileStore(
+      profile: const UserProfile(name: 'Alex', avatar: UserAvatar.cat),
+    );
+    final progressStore = _MemoryFocusTasksProgressStore();
+    await tester.pumpWidget(
+      FocusPawsApp(profileStore: profileStore, progressStore: progressStore),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('create-profile-button')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('create-profile-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('profile-name-field')), 'Bea');
+    await tester.tap(find.byKey(const Key('save-profile-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tu espacio, Bea'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('enter-tasks-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Añadir una tarea'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('task-title-field')),
+      'Tarea de Bea',
+    );
+    await tester.tap(find.byKey(const Key('save-task-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('finish-day-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('select-profile-default')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('enter-tasks-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tarea de Bea'), findsNothing);
+    expect(find.text('0/0 tareas hechas'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('finish-day-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('select-profile-user-2')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('enter-tasks-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tarea de Bea'), findsOneWidget);
+  });
+
+  testWidgets('hides additional profiles in the free-profile view', (
+    tester,
+  ) async {
+    final profileStore =
+        _MemoryUserProfileStore(
+            profile: const UserProfile(name: 'Alex', avatar: UserAvatar.cat),
+          )
+          ..profiles.add(
+            const UserProfile(
+              id: 'user-2',
+              name: 'Bea',
+              avatar: UserAvatar.dog,
+            ),
+          );
+
+    await tester.pumpWidget(
+      FocusPawsApp(
+        profileStore: profileStore,
+        progressStore: _MemoryFocusTasksProgressStore(),
+        allowMultipleProfiles: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('select-profile-default')), findsOneWidget);
+    expect(find.byKey(const Key('select-profile-user-2')), findsNothing);
+    expect(find.byKey(const Key('create-profile-button')), findsNothing);
   });
 
   test('increases the points needed as pet levels rise', () {
@@ -116,15 +260,34 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('FocusPaws'), findsOneWidget);
+    expect(find.byKey(const Key('open-user-profile')), findsNothing);
+    expect(find.byKey(const Key('finish-day-button')), findsOneWidget);
+    expect(
+      tester.getRect(find.byKey(const Key('finish-day-button'))).center.dy,
+      closeTo(tester.getRect(find.text('FocusPaws')).center.dy, 1),
+    );
+    expect(
+      tester.getRect(find.byKey(const Key('finish-day-button'))).right,
+      greaterThan(tester.getRect(find.text('FocusPaws')).right),
+    );
     expect(find.text('¡Hola, Alex!'), findsOneWidget);
     expect(find.text('Kitty 🐾'), findsOneWidget);
-    expect(find.text('🐱'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('progress-pet-avatar'))).data,
+      '🐱',
+    );
     expect(find.text('Empezamos con calma'), findsOneWidget);
     expect(find.text('Añadir una tarea'), findsOneWidget);
-    expect(find.text('0/0 hechas'), findsOneWidget);
+    expect(find.text('0/0 tareas hechas'), findsOneWidget);
     expect(find.text('NIVEL 1'), findsOneWidget);
     expect(find.text('0 / 150 pts'), findsOneWidget);
-    expect(find.text('0 pts totales'), findsOneWidget);
+    expect(find.byKey(const Key('pet-total-points')), findsNothing);
+    expect(find.text('TU COMPAÑERO DE HOY'), findsNothing);
+    expect(find.text('Tu reto del día'), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byKey(const Key('finish-day-button'))),
+      isA<FilledButton>(),
+    );
     expect(find.text('Progreso hacia nivel 2'), findsOneWidget);
   });
 
@@ -182,15 +345,13 @@ void main() {
     await _scrollToFinder(tester, find.byKey(const ValueKey('task-0')));
     await tester.tap(find.byKey(const ValueKey('task-0')));
     await tester.pumpAndSettle();
-    expect(find.text('15 pts totales'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(_homeApp(progressStore: progressStore));
     await tester.pumpAndSettle();
 
     expect(find.text('Preparar el desayuno'), findsNothing);
-    expect(find.text('1/1 hechas'), findsOneWidget);
-    expect(find.text('15 pts totales'), findsOneWidget);
+    expect(find.text('1/1 tareas hechas'), findsOneWidget);
     expect(find.byKey(const ValueKey('task-0')), findsNothing);
     final toggleCompleted = find.byKey(const Key('toggle-completed-tasks'));
     await _scrollToFinder(tester, toggleCompleted);
@@ -205,7 +366,6 @@ void main() {
     await _scrollToFinder(tester, find.byKey(const ValueKey('task-0')));
     await tester.tap(find.byKey(const ValueKey('task-0')));
     await tester.pumpAndSettle();
-    expect(find.text('15 pts totales'), findsOneWidget);
   });
 
   test('round-trips persisted task progress and rejects invalid data', () {
@@ -221,6 +381,10 @@ void main() {
       points: 15,
       bonusRestSeconds: 300,
       perseveranceSnacks: 2,
+      dailyCompletions: {
+        '2026-11-04': [3, 5, 8],
+        '2026-11-03': [2, 4],
+      },
     );
 
     final restored = FocusTasksProgress.fromJson(progress.toJson());
@@ -231,6 +395,8 @@ void main() {
     expect(restored.tasks.single.isCompleted, isTrue);
     expect(restored.tasks.single.hasReceivedReward, isTrue);
     expect(restored.tasks.single.estimatedMinutes, 30);
+    expect(restored.dailyCompletions['2026-11-04'], [3, 5, 8]);
+    expect(restored.stickerUnlockDates, ['2026-11-04']);
     expect(
       () => FocusTasksProgress.fromJson('{"points":-1,"tasks":[]}'),
       throwsFormatException,
@@ -242,6 +408,74 @@ void main() {
     expect(previousVersion.bonusRestSeconds, 0);
     expect(previousVersion.perseveranceSnacks, 0);
     expect(previousVersion.tasks.single.estimatedMinutes, 30);
+    expect(previousVersion.dailyCompletions, isEmpty);
+  });
+
+  testWidgets('persists daily sticker unlocks and resets the daily counter', (
+    tester,
+  ) async {
+    var today = DateTime(2026, 11, 4, 12);
+    final progressStore = _MemoryFocusTasksProgressStore()
+      ..progress = FocusTasksProgress(
+        tasks: [
+          for (var id = 0; id < 3; id++)
+            FocusTaskProgress(
+              id: id,
+              title: 'Tarea $id',
+              isCompleted: false,
+              hasReceivedReward: false,
+            ),
+        ],
+        points: 0,
+      );
+
+    await tester.pumpWidget(
+      _homeApp(progressStore: progressStore, clock: () => today),
+    );
+    await tester.pumpAndSettle();
+    await _scrollToFinder(
+      tester,
+      find.byKey(const Key('open-sticker-album-button')),
+    );
+    expect(find.text('0 de 3 tareas para la pegatina de hoy'), findsOneWidget);
+
+    for (var id = 0; id < 3; id++) {
+      final task = find.byKey(ValueKey('task-$id'));
+      await _scrollToFinder(tester, task);
+      await tester.tap(task);
+      await tester.pumpAndSettle();
+    }
+
+    await _scrollToFinder(
+      tester,
+      find.byKey(const Key('open-sticker-album-button')),
+    );
+    expect(find.text('¡Pegatina de hoy desbloqueada!'), findsOneWidget);
+    expect(find.text('1 pegatina en tu colección'), findsOneWidget);
+    expect(progressStore.progress.dailyCompletions['2026-11-04'], [0, 1, 2]);
+    expect(progressStore.progress.stickerUnlockDates, ['2026-11-04']);
+
+    await tester.tap(find.byKey(const Key('open-sticker-album-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('sticker-album-grid')), findsOneWidget);
+    expect(find.byKey(const Key('sticker-2026-11-04')), findsOneWidget);
+    expect(find.text('04/11/2026'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    today = DateTime(2026, 11, 5, 9);
+    await tester.pumpWidget(
+      _homeApp(progressStore: progressStore, clock: () => today),
+    );
+    await tester.pumpAndSettle();
+    await _scrollToFinder(
+      tester,
+      find.byKey(const Key('open-sticker-album-button')),
+    );
+    expect(find.text('0 de 3 tareas para la pegatina de hoy'), findsOneWidget);
+    expect(find.text('1 pegatina en tu colección'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('open-sticker-album-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('sticker-2026-11-04')), findsOneWidget);
   });
 
   testWidgets('adds a task and lets the user mark it complete', (tester) async {
@@ -258,15 +492,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparar el desayuno'), findsOneWidget);
-    expect(find.text('0/1 hechas'), findsOneWidget);
+    expect(find.text('0/1 tareas hechas'), findsOneWidget);
 
     await _scrollToFinder(tester, find.byKey(const ValueKey('task-0')));
     await tester.tap(find.byKey(const ValueKey('task-0')));
     await tester.pumpAndSettle();
 
-    expect(find.text('1/1 hechas'), findsOneWidget);
-    expect(find.text('15 / 150 pts'), findsOneWidget);
-    expect(find.text('15 pts totales'), findsOneWidget);
+    expect(find.text('1/1 tareas hechas'), findsOneWidget);
+    expect(find.text('20 / 150 pts'), findsOneWidget);
+    expect(find.text('¡Misión cumplida por hoy!'), findsOneWidget);
 
     expect(find.byKey(const ValueKey('task-0')), findsNothing);
     final toggleCompleted = find.byKey(const Key('toggle-completed-tasks'));
@@ -280,9 +514,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('task-0')));
     await tester.pumpAndSettle();
 
-    expect(find.text('1/1 hechas'), findsOneWidget);
-    expect(find.text('15 / 150 pts'), findsOneWidget);
-    expect(find.text('15 pts totales'), findsOneWidget);
+    expect(find.text('1/1 tareas hechas'), findsOneWidget);
+    expect(find.text('20 / 150 pts'), findsOneWidget);
   });
 
   testWidgets('saves the selected task size and awards its points', (
@@ -301,14 +534,14 @@ void main() {
     await tester.tap(find.byKey(const Key('save-task-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Paso corto · 15 min · +5 pts'), findsOneWidget);
+    expect(find.text('Paso corto · 15 min · +10 pts'), findsOneWidget);
     expect(progressStore.progress.tasks.single.estimatedMinutes, 15);
 
     await _scrollToFinder(tester, find.byKey(const ValueKey('task-0')));
     await tester.tap(find.byKey(const ValueKey('task-0')));
     await tester.pumpAndSettle();
-    expect(find.text('5 pts totales'), findsOneWidget);
-    expect(progressStore.progress.points, 5);
+    expect(find.text('10 / 150 pts'), findsOneWidget);
+    expect(progressStore.progress.points, 10);
 
     await tester.tap(find.text('Añadir una tarea'));
     await tester.pumpAndSettle();
@@ -319,14 +552,14 @@ void main() {
     await tester.tap(find.byKey(const Key('task-size-long')));
     await tester.tap(find.byKey(const Key('save-task-button')));
     await tester.pumpAndSettle();
-    expect(find.text('Gran esfuerzo · 45 min · +30 pts'), findsOneWidget);
+    expect(find.text('Gran esfuerzo · 45 min · +40 pts'), findsOneWidget);
     expect(progressStore.progress.tasks.first.estimatedMinutes, 45);
 
     await _scrollToFinder(tester, find.byKey(const ValueKey('task-1')));
     await tester.tap(find.byKey(const ValueKey('task-1')));
     await tester.pumpAndSettle();
-    expect(find.text('35 pts totales'), findsOneWidget);
-    expect(progressStore.progress.points, 35);
+    expect(find.text('50 / 150 pts'), findsOneWidget);
+    expect(progressStore.progress.points, 50);
   });
 
   testWidgets('completes a focus block and grants its reward only once', (
@@ -375,12 +608,11 @@ void main() {
       find.text('Tiempo de Bonificación para Descanso: +7 min'),
       findsOneWidget,
     );
-    expect(find.text('+15 puntos de energía para tu mascota'), findsOneWidget);
+    expect(find.text('+20 puntos de energía para tu mascota'), findsOneWidget);
     await tester.tap(find.byKey(const Key('focus-reward-continue-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('1/1 hechas'), findsOneWidget);
-    expect(find.text('15 pts totales'), findsOneWidget);
+    expect(find.text('1/1 tareas hechas'), findsOneWidget);
     expect(find.text('Descanso +7 min'), findsOneWidget);
     expect(progressStore.progress.bonusRestSeconds, 420);
     expect(find.byKey(const ValueKey('task-0')), findsNothing);
@@ -397,8 +629,7 @@ void main() {
     await _scrollToFinder(tester, find.byKey(const ValueKey('task-0')));
     await tester.tap(find.byKey(const ValueKey('task-0')));
     await tester.pumpAndSettle();
-    expect(find.text('1/1 hechas'), findsOneWidget);
-    expect(find.text('15 pts totales'), findsOneWidget);
+    expect(find.text('1/1 tareas hechas'), findsOneWidget);
   });
 
   testWidgets('very early completion keeps the standard rest only', (
@@ -416,6 +647,7 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('save-task-button')));
     await tester.pumpAndSettle();
+    await _scrollToFinder(tester, find.byKey(const Key('start-focus-0')));
     await tester.tap(find.byKey(const Key('start-focus-0')));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(minutes: 4));
@@ -456,6 +688,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('save-task-button')));
       await tester.pumpAndSettle();
+      await _scrollToFinder(tester, find.byKey(const Key('start-focus-0')));
       await tester.tap(find.byKey(const Key('start-focus-0')));
       await tester.pumpAndSettle();
 
@@ -519,7 +752,6 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('focus-reward-continue-button')));
       await tester.pumpAndSettle();
-      expect(find.text('15 pts totales'), findsOneWidget);
       expect(find.text('🍪 1'), findsOneWidget);
       expect(progressStore.progress.perseveranceSnacks, 1);
       expect(progressStore.progress.tasks.single.isCompleted, isTrue);
@@ -581,6 +813,7 @@ void main() {
     await tester.tap(find.byKey(const Key('save-task-button')));
     await tester.pumpAndSettle();
 
+    await _scrollToFinder(tester, find.byKey(const Key('start-focus-0')));
     await tester.tap(find.byKey(const Key('start-focus-0')));
     await tester.pumpAndSettle();
     await _scrollToFinder(
@@ -602,7 +835,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Abandonar'));
     await tester.pumpAndSettle();
-    expect(find.text('0/1 hechas'), findsOneWidget);
+    expect(find.text('0/1 tareas hechas'), findsOneWidget);
     expect(find.text('Leer un capítulo'), findsOneWidget);
   });
 
@@ -623,9 +856,9 @@ void main() {
       await tester.pumpAndSettle();
 
       final taskFinder = find.byKey(ValueKey('task-$index'));
-      await tester.ensureVisible(taskFinder);
+      await _scrollToFinder(tester, taskFinder);
       await tester.tap(taskFinder);
-      if (index == 9 || index == 19) {
+      if (index == 7 || index == 14) {
         await tester.drag(find.byType(ListView), const Offset(0, 3000));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 225));
@@ -639,23 +872,25 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      if (index == 9 || index == 19) {
+      if (index == 7 || index == 14) {
         await tester.drag(find.byType(ListView), const Offset(0, 3000));
         await tester.pumpAndSettle();
-        final level = index == 9 ? 2 : 3;
-        final nextLevelPoints = index == 9 ? 150 : 180;
-        final totalPoints = index == 9 ? 150 : 300;
+        final level = index == 7 ? 2 : 3;
+        final nextLevelPoints = index == 7 ? 150 : 180;
+        final pointsInLevel = index == 7 ? 10 : 0;
         expect(find.text('NIVEL $level'), findsOneWidget);
         expect(find.text('Progreso hacia nivel ${level + 1}'), findsOneWidget);
-        expect(find.text('0 / $nextLevelPoints pts'), findsOneWidget);
-        expect(find.text('$totalPoints pts totales'), findsOneWidget);
+        expect(
+          find.text('$pointsInLevel / $nextLevelPoints pts'),
+          findsOneWidget,
+        );
         expect(
           tester
               .widget<LinearProgressIndicator>(
                 find.byKey(const Key('pet-level-progress')),
               )
               .value,
-          0,
+          closeTo(pointsInLevel / nextLevelPoints, 0.001),
         );
         expect(find.text('$level'), findsOneWidget);
       }
@@ -663,17 +898,16 @@ void main() {
 
     await tester.drag(find.byType(ListView), const Offset(0, 3000));
     await tester.pumpAndSettle();
-    expect(find.text('21/21 hechas'), findsOneWidget);
+    expect(find.text('21/21 tareas hechas'), findsOneWidget);
     expect(find.text('NIVEL 3'), findsOneWidget);
-    expect(find.text('15 / 180 pts'), findsOneWidget);
-    expect(find.text('315 pts totales'), findsOneWidget);
+    expect(find.text('120 / 180 pts'), findsOneWidget);
     expect(
       tester
           .widget<LinearProgressIndicator>(
             find.byKey(const Key('pet-level-progress')),
           )
           .value,
-      closeTo(15 / 180, 0.001),
+      closeTo(120 / 180, 0.001),
     );
     expect(find.text('3'), findsOneWidget);
   });
@@ -691,7 +925,7 @@ void main() {
       find.text('Escribe una tarea para poder guardarla.'),
       findsOneWidget,
     );
-    expect(find.text('0/0 hechas'), findsOneWidget);
+    expect(find.text('0/0 tareas hechas'), findsOneWidget);
   });
 
   testWidgets('transcribes Spanish speech and saves the task', (tester) async {
@@ -802,6 +1036,7 @@ Widget _homeApp({
   Duration focusDuration = const Duration(minutes: 25),
   Duration overtimeBlockDuration = const Duration(minutes: 5),
   FocusTasksProgressStore? progressStore,
+  DateTime Function()? clock,
 }) => FocusPawsApp(
   profileStore: _MemoryUserProfileStore(
     profile: const UserProfile(name: 'Alex', avatar: UserAvatar.cat),
@@ -809,6 +1044,8 @@ Widget _homeApp({
   progressStore: progressStore ?? _MemoryFocusTasksProgressStore(),
   focusDuration: focusDuration,
   overtimeBlockDuration: overtimeBlockDuration,
+  clock: clock ?? DateTime.now,
+  startWithSelectedProfile: true,
 );
 
 Future<void> _scrollToFinder(WidgetTester tester, Finder finder) async {
@@ -831,29 +1068,50 @@ Future<void> _scrollToFinder(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
 }
 
-class _MemoryUserProfileStore implements UserProfileStore {
-  _MemoryUserProfileStore({this.profile});
+class _MemoryUserProfileStore implements UserProfileCollectionStore {
+  _MemoryUserProfileStore({UserProfile? profile})
+    : profiles = profile == null ? [] : [profile];
 
-  UserProfile? profile;
+  List<UserProfile> profiles;
+  UserProfile? get profile => profiles.isEmpty ? null : profiles.first;
 
   @override
   Future<UserProfile?> loadProfile() async => profile;
 
   @override
+  Future<List<UserProfile>> loadProfiles() async => List.of(profiles);
+
+  @override
   Future<void> saveProfile(UserProfile profile) async {
-    this.profile = profile;
+    await saveProfiles([profile]);
+  }
+
+  @override
+  Future<void> saveProfiles(List<UserProfile> profiles) async {
+    this.profiles = List.of(profiles);
   }
 }
 
 class _MemoryFocusTasksProgressStore implements FocusTasksProgressStore {
-  FocusTasksProgress progress = FocusTasksProgress.empty;
+  final Map<String, FocusTasksProgress> _progressByProfile = {};
+
+  FocusTasksProgress get progress =>
+      _progressByProfile['default'] ?? FocusTasksProgress.empty;
+  set progress(FocusTasksProgress value) {
+    _progressByProfile['default'] = value;
+  }
 
   @override
-  Future<FocusTasksProgress> loadProgress() async => progress;
+  Future<FocusTasksProgress> loadProgress({
+    String profileId = 'default',
+  }) async => _progressByProfile[profileId] ?? FocusTasksProgress.empty;
 
   @override
-  Future<void> saveProgress(FocusTasksProgress progress) async {
-    this.progress = FocusTasksProgress(
+  Future<void> saveProgress(
+    FocusTasksProgress progress, {
+    String profileId = 'default',
+  }) async {
+    _progressByProfile[profileId] = FocusTasksProgress(
       tasks: progress.tasks
           .map(
             (task) => FocusTaskProgress(
@@ -868,6 +1126,7 @@ class _MemoryFocusTasksProgressStore implements FocusTasksProgressStore {
       points: progress.points,
       bonusRestSeconds: progress.bonusRestSeconds,
       perseveranceSnacks: progress.perseveranceSnacks,
+      dailyCompletions: progress.dailyCompletions,
     );
   }
 }

@@ -60,8 +60,14 @@ To keep the pet system sustainable to build for the initial MVP, use simple prog
   - Play a satisfying sound effect ("Pop!" or a celebratory chime).
   - Show digital confetti on screen.
   - Award the egg "focus points" until it hatches into a small creature.
-- **Level progression:** Each task awards 5, 15, or 30 points according to its selected size. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels. The avatar displays its current level and celebrates each level-up, and the bar shows progress toward the next level. Lifetime points stay visible so earlier progress is never lost.
-- **First-run personalization:** On first launch, users choose a name and one of five animals. The home-screen greeting shows only their name; the selected animal appears in the progress card and celebrates level-ups. The animals are named Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), and Bruno (bear).
+- **Level progression:** Each task awards 10, 20, or 40 points according to its selected size. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels. The avatar displays its current level and celebrates each level-up, and the bar shows progress toward the next level. Accumulated points are retained for level calculations, but the lifetime total is hidden to keep the screen simple.
+- **First-run personalization:** On first launch, users choose a name and one of six animals, shown in a two-row, three-column grid. The home-screen greeting shows only their name; the selected animal appears in the progress card and celebrates level-ups. The animals are named Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), and Panda.
+
+### Agreed task-screen refinements
+
+- The header shows **FocusPaws** and a **Finish day** button aligned to its right; profile access stays in the selector and profile hub rather than the task screen.
+- The progress card omits the “Your companion today” heading and lifetime-points line. It keeps the pet's name and level, progress toward the next level, and available rewards.
+- The task section is titled **Your challenge today**, the counter uses the format **0/0 tasks completed**, and completing all tasks shows **Mission accomplished for today!**
 
 ---
 
@@ -90,7 +96,7 @@ When the visual timer reaches zero, the user enters a healthy dopamine boost:
 
 - The screen fills with a celebratory animation (digital confetti or flashing paw prints).
 - The pet jumps for joy and barks or celebrates with a satisfying sound.
-- A large message shows the reward for the selected task size: **"You did it! You earned +5, +15, or +30 energy points for your pet."**
+- A large message shows the reward for the selected task size: **"You did it! You earned +10, +20, or +40 energy points for your pet."**
 
 ---
 
@@ -132,7 +138,7 @@ This diagram shows the simplified user flow from opening the app to earning a re
 │                                                        │
 │ 🎉 Confetti animation / "Pop!" sound                   │
 │ 🐕 Happy, jumping pet                                  │
-│ 💎 Task-size reward (5/15/30 points)                   │
+│ 💎 Task-size reward (10/20/40 points)                  │
 └───────────────────────────┬────────────────────────────┘
                             │
                    (Tap "Continue")
@@ -161,7 +167,7 @@ If you are building this yourself (with Flutter/React Native or a no-code tool s
 ### Block 3: Gamification and rewards
 
 - **Task 3.1:** Implement timer completion. When the circle empties, let users add a visual 5-minute extension, switch to count-up free mode, or finish the task.
-- **Task 3.2:** Implement the reward screen. Add a satisfying sound trigger (a short `.mp3` file) and award the task-size points (5, 15, or 30) when the user taps **Continue**.
+- **Task 3.2:** Implement the reward screen. Add a satisfying sound trigger (a short `.mp3` file) and award the task-size points (10, 20, or 40) when the user taps **Continue**.
 
 ---
 
@@ -173,7 +179,7 @@ FocusPaws should adapt to variable productivity windows and let users finish a t
 
 The user can tap **"I finished early!"** at any time during focus.
 
-- The pet receives the full points for the selected task size: 5, 15, or 30.
+- The pet receives the full points for the selected task size: 10, 20, or 40.
 - Show positive, pet-specific feedback, such as: "Wow! Your brain flew today. [Pet name] is proud of your speed."
 - If at least half of the estimated focus block has elapsed, add the remaining timer duration to the bonus-rest balance, up to the cap for that task size.
 - If the user finishes before half of the estimated block has elapsed, award the points but do not add the remaining time to the rest balance. Keep the standard rest and show a friendly explanation.
@@ -201,9 +207,9 @@ Do not ask users to type a duration. Offer three task-size buttons when creating
 
 | Task size | Estimated time | Pet points | Maximum bonus rest |
 |---|---:|---:|---:|
-| Short step | 15 minutes | 5 | 3 minutes |
-| Standard block | 30 minutes | 15 | 7 minutes |
-| Big effort | 45 minutes | 30 | 10 minutes |
+| Short step | 15 minutes | 10 | 3 minutes |
+| Standard block | 30 minutes | 20 | 7 minutes |
+| Big effort | 45 minutes | 40 | 10 minutes |
 
 Do not offer durations above 45 or 60 minutes; encourage users to split larger tasks into smaller subtasks.
 
@@ -212,7 +218,32 @@ Do not offer durations above 45 or 60 minutes; encourage users to split larger t
 - The size-based reward table replaces the previous fixed reward and applies whether a task is completed from Home or in a focus session, including after an extension or in free mode.
 - If **"I finished early!"** is tapped before half of the estimated time has elapsed, do not add the remaining time to the bonus-rest balance. Keep the standard rest and show a friendly message.
 - Once at least half of the estimated block has elapsed, add the remaining time to the rest balance up to the size-specific cap. Any excess is discarded rather than stored in a separate bank.
-- Tasks saved before task sizes were introduced are treated as Standard blocks (30 minutes and 15 points).
+- Tasks saved before task sizes were introduced are treated as Standard blocks (30 minutes and 20 points when completed under the new table). Points earned before this change are preserved without retroactive adjustment.
+
+---
+
+## Profile management
+
+### Agreed implementation decisions
+
+- When the app opens with saved profiles, it shows a profile selector. Each profile button displays the selected name and pet.
+- Selecting a profile opens an intermediate hub with large buttons to change the pet, edit the name, open the pet room/sticker album, and access tasks.
+- **Finish day** returns to the selector without deleting tasks, points, rewards, or daily history.
+- Progress is stored by profile ID. When upgrading from the single-profile version, the existing profile retains the previous record; new profiles start with separate progress.
+- Creating additional users is prepared for the paid version: the option is visible during development and hidden by default in release builds. A build can enable it with `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; the free version shows only the default profile and does not delete the other profiles' data. This flag does not replace purchase integration.
+
+---
+
+## Persistence system
+
+The app should preserve progress between sessions and present accumulated effort visually through a pet room or sticker album rather than spreadsheet-like statistics. During development, all progress views remain available; the album can be hidden for the free tier later.
+
+### Agreed implementation decisions
+
+- The first collectible format is a sticker album. Each sticker represents a local calendar day on which the user completed three distinct tasks. Completions from Home and Focus Mode both count.
+- Daily progress resets when the device's local date changes. Completing the same task again on the same day does not count it twice.
+- Tasks, points, task sizes, bonus rest, snacks, daily completions, and sticker-unlock dates are saved together in the local progress record. Older records remain compatible; tasks without dated history are not attributed to past days.
+- The album is visible during development. The `FocusPawsFeatures.showStickerAlbum` flag can hide it later while keeping daily progress visible on Home.
 
 ---
 
@@ -220,5 +251,6 @@ Do not offer durations above 45 or 60 minutes; encourage users to split larger t
 
 - Android Studio is installed in `F:\Android\Android Studio`; the Android SDK and emulator are in `F:\Android\Sdk`. Use these locations when configuring or running Android tools; do not check the default locations first.
 - The Flutter SDK will be installed in `F:\Android\flutter`.
+- The Pixel 6 emulator initially has Gboard set to English (US). To type accented Spanish characters, add Spanish under Settings → System → Keyboard → On-screen keyboard → Gboard → Languages; the app does not filter accented letters.
 - We will develop the app incrementally: complete and verify each feature before moving on to the next.
 - The interface should be polished, clear, and intuitive, with particular care to reduce cognitive load and visual clutter for people with ADHD.

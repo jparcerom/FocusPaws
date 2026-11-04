@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -11,6 +12,20 @@ void main() {
   runApp(const FocusPawsApp());
 }
 
+abstract final class FocusPawsFeatures {
+  static const showStickerAlbum = true;
+  static const tasksPerDailySticker = 3;
+  static const allowMultipleProfiles = bool.fromEnvironment(
+    'FOCUSPAWS_PREMIUM_MULTIUSER',
+    defaultValue: kDebugMode,
+  );
+}
+
+String _localDateKey(DateTime date) =>
+    '${date.year.toString().padLeft(4, '0')}-'
+    '${date.month.toString().padLeft(2, '0')}-'
+    '${date.day.toString().padLeft(2, '0')}';
+
 class FocusPawsApp extends StatelessWidget {
   const FocusPawsApp({
     super.key,
@@ -18,12 +33,18 @@ class FocusPawsApp extends StatelessWidget {
     this.progressStore,
     this.focusDuration,
     this.overtimeBlockDuration = const Duration(minutes: 5),
+    this.clock = DateTime.now,
+    this.startWithSelectedProfile = false,
+    this.allowMultipleProfiles,
   });
 
   final UserProfileStore? profileStore;
   final FocusTasksProgressStore? progressStore;
   final Duration? focusDuration;
   final Duration overtimeBlockDuration;
+  final DateTime Function() clock;
+  final bool startWithSelectedProfile;
+  final bool? allowMultipleProfiles;
 
   static const _forest = Color(0xFF28644F);
   static const _ink = Color(0xFF1E3029);
@@ -58,6 +79,9 @@ class FocusPawsApp extends StatelessWidget {
             progressStore ?? SharedPreferencesFocusTasksProgressStore(),
         focusDuration: focusDuration,
         overtimeBlockDuration: overtimeBlockDuration,
+        clock: clock,
+        startWithSelectedProfile: startWithSelectedProfile,
+        allowMultipleProfiles: allowMultipleProfiles,
       ),
     );
   }
@@ -68,7 +92,8 @@ enum UserAvatar {
   cat(id: 'cat', label: 'Gato', petName: 'Kitty', emoji: '🐱'),
   fox(id: 'fox', label: 'Zorro', petName: 'Foxy', emoji: '🦊'),
   rabbit(id: 'rabbit', label: 'Conejo', petName: 'Bunny', emoji: '🐰'),
-  bear(id: 'bear', label: 'Oso', petName: 'Bruno', emoji: '🐻');
+  bear(id: 'bear', label: 'Oso', petName: 'Bruno', emoji: '🐻'),
+  panda(id: 'panda', label: 'Panda', petName: 'Panda', emoji: '🐼');
 
   const UserAvatar({
     required this.id,
@@ -91,16 +116,16 @@ enum UserAvatar {
 }
 
 enum FocusTaskSize {
-  short(minutes: 15, points: 5, maxRestBonusMinutes: 3, label: 'Paso corto'),
+  short(minutes: 15, points: 10, maxRestBonusMinutes: 3, label: 'Paso corto'),
   standard(
     minutes: 30,
-    points: 15,
+    points: 20,
     maxRestBonusMinutes: 7,
     label: 'Bloque estándar',
   ),
   long(
     minutes: 45,
-    points: 30,
+    points: 40,
     maxRestBonusMinutes: 10,
     label: 'Gran esfuerzo',
   );
@@ -136,10 +161,36 @@ class FocusTaskDraft {
 }
 
 class UserProfile {
-  const UserProfile({required this.name, required this.avatar});
+  const UserProfile({
+    this.id = 'default',
+    required this.name,
+    required this.avatar,
+  });
 
+  final String id;
   final String name;
   final UserAvatar avatar;
+
+  Map<String, String> toJson() => {'id': id, 'name': name, 'avatar': avatar.id};
+
+  factory UserProfile.fromJson(Object? value) {
+    if (value is! Map<String, dynamic> ||
+        value['id'] is! String ||
+        (value['id'] as String).trim().isEmpty ||
+        value['name'] is! String ||
+        (value['name'] as String).trim().isEmpty) {
+      throw const FormatException('Invalid saved user profile.');
+    }
+    final avatar = UserAvatar.fromId(value['avatar'] as String?);
+    if (avatar == null) {
+      throw const FormatException('Invalid saved user avatar.');
+    }
+    return UserProfile(
+      id: value['id'] as String,
+      name: (value['name'] as String).trim(),
+      avatar: avatar,
+    );
+  }
 }
 
 abstract interface class UserProfileStore {
@@ -148,25 +199,85 @@ abstract interface class UserProfileStore {
   Future<void> saveProfile(UserProfile profile);
 }
 
-class SharedPreferencesUserProfileStore implements UserProfileStore {
+abstract interface class UserProfileCollectionStore
+    implements UserProfileStore {
+  Future<List<UserProfile>> loadProfiles();
+
+  Future<void> saveProfiles(List<UserProfile> profiles);
+}
+
+class SharedPreferencesUserProfileStore implements UserProfileCollectionStore {
   static const _nameKey = 'user_profile_name';
   static const _avatarKey = 'user_profile_avatar';
+  static const _profilesKey = 'user_profiles';
 
   final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
   @override
   Future<UserProfile?> loadProfile() async {
+    final profiles = await loadProfiles();
+    return profiles.isEmpty ? null : profiles.first;
+  }
+
+  @override
+  Future<List<UserProfile>> loadProfiles() async {
+    final savedProfiles = await _preferences.getString(_profilesKey);
+    if (savedProfiles != null) {
+      final decoded = jsonDecode(savedProfiles);
+      if (decoded is! List<Object?>) {
+        throw const FormatException('Invalid saved user profiles.');
+      }
+      final profiles = decoded.map(UserProfile.fromJson).toList();
+      _validateProfiles(profiles);
+      return List.unmodifiable(profiles);
+    }
+
     final name = (await _preferences.getString(_nameKey))?.trim();
     final avatar = UserAvatar.fromId(await _preferences.getString(_avatarKey));
 
-    if (name == null || name.isEmpty || avatar == null) return null;
-    return UserProfile(name: name, avatar: avatar);
+    if (name == null || name.isEmpty || avatar == null) {
+      return const [];
+    }
+    final profile = UserProfile(name: name, avatar: avatar);
+    await saveProfiles([profile]);
+    return [profile];
   }
 
   @override
   Future<void> saveProfile(UserProfile profile) async {
-    await _preferences.setString(_nameKey, profile.name);
-    await _preferences.setString(_avatarKey, profile.avatar.id);
+    final profiles = await loadProfiles();
+    final index = profiles.indexWhere((item) => item.id == profile.id);
+    if (index == -1) {
+      await saveProfiles([...profiles, profile]);
+    } else {
+      final updated = [...profiles];
+      updated[index] = profile;
+      await saveProfiles(updated);
+    }
+  }
+
+  @override
+  Future<void> saveProfiles(List<UserProfile> profiles) async {
+    _validateProfiles(profiles);
+    await _preferences.setString(
+      _profilesKey,
+      jsonEncode(profiles.map((profile) => profile.toJson()).toList()),
+    );
+    if (profiles.isNotEmpty) {
+      final defaultProfile = profiles.firstWhere(
+        (profile) => profile.id == 'default',
+        orElse: () => profiles.first,
+      );
+      await _preferences.setString(_nameKey, defaultProfile.name);
+      await _preferences.setString(_avatarKey, defaultProfile.avatar.id);
+    }
+  }
+
+  void _validateProfiles(List<UserProfile> profiles) {
+    final ids = profiles.map((profile) => profile.id).toSet();
+    if (ids.length != profiles.length) {
+      throw ArgumentError('User profile IDs must be unique.');
+    }
   }
 }
 
@@ -230,7 +341,13 @@ class FocusTasksProgress {
     required this.points,
     this.bonusRestSeconds = 0,
     this.perseveranceSnacks = 0,
-  }) : tasks = List.unmodifiable(tasks) {
+    Map<String, List<int>> dailyCompletions = const {},
+  }) : tasks = List.unmodifiable(tasks),
+       dailyCompletions = Map.unmodifiable(
+         dailyCompletions.map(
+           (date, taskIds) => MapEntry(date, List<int>.unmodifiable(taskIds)),
+         ),
+       ) {
     if (points < 0) throw ArgumentError.value(points, 'points');
     if (bonusRestSeconds < 0) {
       throw ArgumentError.value(bonusRestSeconds, 'bonusRestSeconds');
@@ -242,18 +359,40 @@ class FocusTasksProgress {
     if (ids.length != tasks.length) {
       throw ArgumentError('Task IDs must be unique.');
     }
+    for (final entry in this.dailyCompletions.entries) {
+      final date = DateTime.tryParse(entry.key);
+      if (date == null || _localDateKey(date) != entry.key) {
+        throw ArgumentError.value(entry.key, 'dailyCompletions');
+      }
+      if (entry.value.any((id) => id < 0) ||
+          entry.value.toSet().length != entry.value.length) {
+        throw ArgumentError.value(entry.value, 'dailyCompletions');
+      }
+    }
   }
 
   final List<FocusTaskProgress> tasks;
   final int points;
   final int bonusRestSeconds;
   final int perseveranceSnacks;
+  final Map<String, List<int>> dailyCompletions;
+
+  List<String> get stickerUnlockDates =>
+      dailyCompletions.entries
+          .where(
+            (entry) =>
+                entry.value.length >= FocusPawsFeatures.tasksPerDailySticker,
+          )
+          .map((entry) => entry.key)
+          .toList()
+        ..sort();
 
   static const empty = FocusTasksProgress._(
     tasks: [],
     points: 0,
     bonusRestSeconds: 0,
     perseveranceSnacks: 0,
+    dailyCompletions: {},
   );
 
   const FocusTasksProgress._({
@@ -261,6 +400,7 @@ class FocusTasksProgress {
     required this.points,
     required this.bonusRestSeconds,
     required this.perseveranceSnacks,
+    required this.dailyCompletions,
   });
 
   factory FocusTasksProgress.fromJson(String json) {
@@ -271,19 +411,36 @@ class FocusTasksProgress {
         (value['bonusRestSeconds'] != null &&
             value['bonusRestSeconds'] is! int) ||
         (value['perseveranceSnacks'] != null &&
-            value['perseveranceSnacks'] is! int)) {
+            value['perseveranceSnacks'] is! int) ||
+        (value['dailyCompletions'] != null &&
+            value['dailyCompletions'] is! Map<String, dynamic>)) {
       throw const FormatException('Invalid saved task progress.');
     }
 
     final tasks = (value['tasks'] as List<Object?>)
         .map(FocusTaskProgress.fromJson)
         .toList();
+    final dailyCompletions = <String, List<int>>{};
+    final savedDailyCompletions =
+        value['dailyCompletions'] as Map<String, dynamic>? ?? {};
+    for (final entry in savedDailyCompletions.entries) {
+      final date = DateTime.tryParse(entry.key);
+      final taskIds = entry.value;
+      if (date == null ||
+          _localDateKey(date) != entry.key ||
+          taskIds is! List<Object?> ||
+          taskIds.any((id) => id is! int)) {
+        throw const FormatException('Invalid saved daily task completions.');
+      }
+      dailyCompletions[entry.key] = taskIds.cast<int>();
+    }
     try {
       return FocusTasksProgress(
         tasks: tasks,
         points: value['points'] as int,
         bonusRestSeconds: value['bonusRestSeconds'] as int? ?? 0,
         perseveranceSnacks: value['perseveranceSnacks'] as int? ?? 0,
+        dailyCompletions: dailyCompletions,
       );
     } on ArgumentError {
       throw const FormatException('Invalid saved task progress.');
@@ -294,33 +451,72 @@ class FocusTasksProgress {
     'points': points,
     'bonusRestSeconds': bonusRestSeconds,
     'perseveranceSnacks': perseveranceSnacks,
+    'dailyCompletions': dailyCompletions,
     'tasks': tasks.map((task) => task.toJson()).toList(),
   });
 }
 
 abstract interface class FocusTasksProgressStore {
-  Future<FocusTasksProgress> loadProgress();
+  Future<FocusTasksProgress> loadProgress({String profileId = 'default'});
 
-  Future<void> saveProgress(FocusTasksProgress progress);
+  Future<void> saveProgress(
+    FocusTasksProgress progress, {
+    String profileId = 'default',
+  });
 }
 
 class SharedPreferencesFocusTasksProgressStore
     implements FocusTasksProgressStore {
   static const _progressKey = 'focus_tasks_progress';
+  static const _legacyProgressKey = 'focus_tasks_progress';
 
   final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
   @override
-  Future<FocusTasksProgress> loadProgress() async {
-    final json = await _preferences.getString(_progressKey);
+  Future<FocusTasksProgress> loadProgress({
+    String profileId = 'default',
+  }) async {
+    final key = '${_progressKey}_$profileId';
+    var json = await _preferences.getString(key);
+    if (json == null && profileId == 'default') {
+      json = await _preferences.getString(_legacyProgressKey);
+      if (json != null) {
+        await _preferences.setString(key, json);
+        await _preferences.remove(_legacyProgressKey);
+      }
+    }
     return json == null
         ? FocusTasksProgress.empty
         : FocusTasksProgress.fromJson(json);
   }
 
   @override
-  Future<void> saveProgress(FocusTasksProgress progress) =>
-      _preferences.setString(_progressKey, progress.toJson());
+  Future<void> saveProgress(
+    FocusTasksProgress progress, {
+    String profileId = 'default',
+  }) => _preferences.setString('${_progressKey}_$profileId', progress.toJson());
+}
+
+class _UserTasksPage extends StatefulWidget {
+  const _UserTasksPage({
+    super.key,
+    required this.profile,
+    required this.progressStore,
+    required this.onEndDay,
+    this.focusDuration,
+    this.overtimeBlockDuration = const Duration(minutes: 5),
+    this.clock = DateTime.now,
+  });
+
+  final UserProfile profile;
+  final FocusTasksProgressStore progressStore;
+  final VoidCallback onEndDay;
+  final Duration? focusDuration;
+  final Duration overtimeBlockDuration;
+  final DateTime Function() clock;
+
+  @override
+  State<_UserTasksPage> createState() => _UserTasksPageState();
 }
 
 class HomePage extends StatefulWidget {
@@ -330,49 +526,332 @@ class HomePage extends StatefulWidget {
     required this.progressStore,
     this.focusDuration,
     this.overtimeBlockDuration = const Duration(minutes: 5),
+    this.clock = DateTime.now,
+    this.startWithSelectedProfile = false,
+    this.allowMultipleProfiles,
   });
 
   final UserProfileStore profileStore;
   final FocusTasksProgressStore progressStore;
   final Duration? focusDuration;
   final Duration overtimeBlockDuration;
+  final DateTime Function() clock;
+  final bool startWithSelectedProfile;
+  final bool? allowMultipleProfiles;
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageShellState();
 }
 
-class _HomePageState extends State<HomePage>
-    with SingleTickerProviderStateMixin {
+enum _AppScreen {
+  loading,
+  welcome,
+  launcher,
+  profileHub,
+  editName,
+  editAvatar,
+  tasks,
+}
+
+class _HomePageShellState extends State<HomePage> {
+  late Future<List<UserProfile>> _profilesFuture;
+  late Future<FocusTasksProgress> _hubProgressFuture;
+  List<UserProfile> _profiles = [];
+  UserProfile? _selectedProfile;
+  _AppScreen _screen = _AppScreen.loading;
+
+  bool get _allowMultipleProfiles =>
+      widget.allowMultipleProfiles ?? FocusPawsFeatures.allowMultipleProfiles;
+
+  List<UserProfile> get _availableProfiles {
+    if (_allowMultipleProfiles || _profiles.length <= 1) return _profiles;
+    return [
+      _profiles.firstWhere(
+        (profile) => profile.id == 'default',
+        orElse: () => _profiles.first,
+      ),
+    ];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _profilesFuture = _loadProfiles();
+  }
+
+  Future<List<UserProfile>> _loadProfiles() async {
+    final store = widget.profileStore;
+    if (store is UserProfileCollectionStore) return store.loadProfiles();
+    final profile = await store.loadProfile();
+    return profile == null ? [] : [profile];
+  }
+
+  Future<void> _saveProfiles(List<UserProfile> profiles) async {
+    final store = widget.profileStore;
+    if (store is UserProfileCollectionStore) {
+      await store.saveProfiles(profiles);
+      return;
+    }
+    if (profiles.length > 1) {
+      throw StateError('This profile store does not support multiple users.');
+    }
+    if (profiles.isEmpty) return;
+    await store.saveProfile(profiles.single);
+  }
+
+  void _initializeProfiles(List<UserProfile> profiles) {
+    if (_screen != _AppScreen.loading) return;
+    _profiles = profiles;
+    if (profiles.isEmpty) {
+      _screen = _AppScreen.welcome;
+    } else if (widget.startWithSelectedProfile) {
+      _selectedProfile = profiles.first;
+      _screen = _AppScreen.tasks;
+    } else {
+      _screen = _AppScreen.launcher;
+    }
+  }
+
+  Future<void> _saveNewProfile(UserProfile profile) async {
+    final id = _profiles.isEmpty ? 'default' : _nextProfileId(_profiles);
+    final savedProfile = UserProfile(
+      id: id,
+      name: profile.name,
+      avatar: profile.avatar,
+    );
+    final updatedProfiles = [..._profiles, savedProfile];
+    await _saveProfiles(updatedProfiles);
+    if (!mounted) return;
+    setState(() {
+      _profiles = updatedProfiles;
+      _selectedProfile = savedProfile;
+      _screen = _profiles.length == 1
+          ? _AppScreen.tasks
+          : _AppScreen.profileHub;
+      _hubProgressFuture = widget.progressStore.loadProgress(
+        profileId: savedProfile.id,
+      );
+    });
+  }
+
+  String _nextProfileId(List<UserProfile> profiles) {
+    var index = 2;
+    while (profiles.any((profile) => profile.id == 'user-$index')) {
+      index++;
+    }
+    return 'user-$index';
+  }
+
+  void _selectProfile(UserProfile profile) {
+    setState(() {
+      _selectedProfile = profile;
+      _hubProgressFuture = widget.progressStore.loadProgress(
+        profileId: profile.id,
+      );
+      _screen = _AppScreen.profileHub;
+    });
+  }
+
+  void _enterTasks() => setState(() => _screen = _AppScreen.tasks);
+
+  void _endDay() => setState(() {
+    _selectedProfile = null;
+    _screen = _AppScreen.launcher;
+  });
+
+  Future<void> _saveEditedProfile(UserProfile editedProfile) async {
+    final updatedProfiles = [
+      for (final profile in _profiles)
+        if (profile.id == editedProfile.id) editedProfile else profile,
+    ];
+    await _saveProfiles(updatedProfiles);
+    if (!mounted) return;
+    setState(() {
+      _profiles = updatedProfiles;
+      _selectedProfile = editedProfile;
+      _screen = _AppScreen.profileHub;
+    });
+  }
+
+  void _retryProfiles() {
+    setState(() {
+      _screen = _AppScreen.loading;
+      _profilesFuture = _loadProfiles();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<List<UserProfile>>(
+    future: _profilesFuture,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState != ConnectionState.done) {
+        return const _ProfileLoadingScreen();
+      }
+      if (snapshot.hasError) {
+        return _ProfileErrorScreen(onRetry: _retryProfiles);
+      }
+      _initializeProfiles(snapshot.requireData);
+      switch (_screen) {
+        case _AppScreen.loading:
+          return const _ProfileLoadingScreen();
+        case _AppScreen.welcome:
+          return WelcomeScreen(
+            onSave: _saveNewProfile,
+            onCancel: _profiles.isEmpty
+                ? null
+                : () => setState(() => _screen = _AppScreen.launcher),
+          );
+        case _AppScreen.launcher:
+          return _AccountLauncher(
+            profiles: _availableProfiles,
+            onSelect: _selectProfile,
+            onCreate: _allowMultipleProfiles
+                ? () => setState(() => _screen = _AppScreen.welcome)
+                : null,
+          );
+        case _AppScreen.profileHub:
+          return _selectedProfile == null
+              ? _AccountLauncher(
+                  profiles: _availableProfiles,
+                  onSelect: _selectProfile,
+                  onCreate: null,
+                )
+              : FutureBuilder<FocusTasksProgress>(
+                  future: _hubProgressFuture,
+                  builder: (context, progressSnapshot) {
+                    if (progressSnapshot.connectionState !=
+                        ConnectionState.done) {
+                      return const _ProgressLoadingScreen();
+                    }
+                    if (progressSnapshot.hasError) {
+                      return _ProgressErrorScreen(
+                        onRetry: () => setState(() {
+                          _hubProgressFuture = widget.progressStore
+                              .loadProgress(profileId: _selectedProfile!.id);
+                        }),
+                      );
+                    }
+                    return _UserProfileHub(
+                      profile: _selectedProfile!,
+                      unlockedDates: _unlockedStickerDates(
+                        progressSnapshot.requireData,
+                      ),
+                      onEditName: () =>
+                          setState(() => _screen = _AppScreen.editName),
+                      onEditAvatar: () =>
+                          setState(() => _screen = _AppScreen.editAvatar),
+                      onEnterTasks: _enterTasks,
+                      onBack: _endDay,
+                    );
+                  },
+                );
+        case _AppScreen.editName:
+        case _AppScreen.editAvatar:
+          final profile = _selectedProfile!;
+          return WelcomeScreen(
+            key: ValueKey('${profile.id}-$_screen'),
+            initialProfile: profile,
+            editNameOnly: _screen == _AppScreen.editName,
+            editAvatarOnly: _screen == _AppScreen.editAvatar,
+            onCancel: () => setState(() => _screen = _AppScreen.profileHub),
+            onSave: _saveEditedProfile,
+          );
+        case _AppScreen.tasks:
+          final profile = _selectedProfile!;
+          return _UserTasksPage(
+            key: ValueKey(profile.id),
+            profile: profile,
+            progressStore: widget.progressStore,
+            focusDuration: widget.focusDuration,
+            overtimeBlockDuration: widget.overtimeBlockDuration,
+            clock: widget.clock,
+            onEndDay: _endDay,
+          );
+      }
+    },
+  );
+}
+
+List<String> _unlockedStickerDates(FocusTasksProgress progress) =>
+    progress.dailyCompletions.entries
+        .where(
+          (entry) =>
+              entry.value.length >= FocusPawsFeatures.tasksPerDailySticker,
+        )
+        .map((entry) => entry.key)
+        .toList()
+      ..sort();
+
+class _UserTasksPageState extends State<_UserTasksPage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final List<FocusTask> _tasks = [];
   int _nextTaskId = 0;
   int _earnedPoints = 0;
   Duration _bonusRest = Duration.zero;
   int _perseveranceSnacks = 0;
+  Map<String, Set<int>> _dailyCompletions = {};
   late final AnimationController _levelUpController;
-  late Future<UserProfile?> _profileFuture;
   late Future<FocusTasksProgress> _progressFuture;
   Future<void> _pendingProgressSave = Future<void>.value();
   bool _hasRestoredProgress = false;
   bool _showAllPendingTasks = false;
   bool _showCompletedTasks = false;
+  Timer? _dailyResetTimer;
 
   int get _completedCount => _tasks.where((task) => task.isCompleted).length;
+  String get _todayKey => _localDateKey(widget.clock());
+  List<String> get _stickerUnlockDates =>
+      _dailyCompletions.entries
+          .where(
+            (entry) =>
+                entry.value.length >= FocusPawsFeatures.tasksPerDailySticker,
+          )
+          .map((entry) => entry.key)
+          .toList()
+        ..sort();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scheduleDailyRefresh();
     _levelUpController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _profileFuture = widget.profileStore.loadProfile();
-    _progressFuture = widget.progressStore.loadProgress();
+    _progressFuture = widget.progressStore.loadProgress(
+      profileId: widget.profile.id,
+    );
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dailyResetTimer?.cancel();
     _levelUpController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      setState(() {});
+      _scheduleDailyRefresh();
+    }
+  }
+
+  void _scheduleDailyRefresh() {
+    _dailyResetTimer?.cancel();
+    final now = widget.clock();
+    final nextDay = DateTime(now.year, now.month, now.day + 1);
+    _dailyResetTimer = Timer(
+      nextDay.difference(now) + const Duration(seconds: 1),
+      () {
+        if (!mounted) return;
+        setState(() {});
+        _scheduleDailyRefresh();
+      },
+    );
   }
 
   Future<void> _addTask() async {
@@ -396,24 +875,28 @@ class _HomePageState extends State<HomePage>
     _persistProgress();
   }
 
-  Future<void> _saveProfile(UserProfile profile) async {
-    await widget.profileStore.saveProfile(profile);
-    if (!mounted) return;
-    setState(() {
-      _profileFuture = Future.value(profile);
-    });
-  }
-
-  void _retryProfileLoad() {
-    setState(() {
-      _profileFuture = widget.profileStore.loadProfile();
-    });
-  }
-
   void _retryProgressLoad() {
     setState(() {
-      _progressFuture = widget.progressStore.loadProgress();
+      _progressFuture = widget.progressStore.loadProgress(
+        profileId: widget.profile.id,
+      );
     });
+  }
+
+  Future<void> _finishDay() async {
+    try {
+      await _pendingProgressSave;
+    } on Exception {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo guardar tu progreso. Inténtalo de nuevo.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (mounted) widget.onEndDay();
   }
 
   void _persistProgress() {
@@ -432,10 +915,19 @@ class _HomePageState extends State<HomePage>
       points: _earnedPoints,
       bonusRestSeconds: _bonusRest.inSeconds,
       perseveranceSnacks: _perseveranceSnacks,
+      dailyCompletions: {
+        for (final entry in _dailyCompletions.entries)
+          entry.key: entry.value.toList()..sort(),
+      },
     );
     _pendingProgressSave = _pendingProgressSave
         .catchError((Object _) {})
-        .then((_) => widget.progressStore.saveProgress(snapshot));
+        .then(
+          (_) => widget.progressStore.saveProgress(
+            snapshot,
+            profileId: widget.profile.id,
+          ),
+        );
     _pendingProgressSave.catchError((Object error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -468,6 +960,10 @@ class _HomePageState extends State<HomePage>
     _earnedPoints = progress.points;
     _bonusRest = Duration(seconds: progress.bonusRestSeconds);
     _perseveranceSnacks = progress.perseveranceSnacks;
+    _dailyCompletions = {
+      for (final entry in progress.dailyCompletions.entries)
+        entry.key: entry.value.toSet(),
+    };
   }
 
   void _toggleTask(FocusTask task, bool isCompleted) {
@@ -486,6 +982,7 @@ class _HomePageState extends State<HomePage>
     var leveledUp = false;
     setState(() {
       task.isCompleted = true;
+      _dailyCompletions.putIfAbsent(_todayKey, () => <int>{}).add(task.id);
       if (!task.hasReceivedReward) {
         final previousLevel = PetProgress.fromTotalPoints(_earnedPoints).level;
         _earnedPoints += task.size.points;
@@ -524,38 +1021,22 @@ class _HomePageState extends State<HomePage>
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<UserProfile?>(
-      future: _profileFuture,
+    return FutureBuilder<FocusTasksProgress>(
+      future: _progressFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const _ProfileLoadingScreen();
+          return const _ProgressLoadingScreen();
         }
 
         if (snapshot.hasError) {
-          return _ProfileErrorScreen(onRetry: _retryProfileLoad);
+          return _ProgressErrorScreen(onRetry: _retryProgressLoad);
         }
 
-        final profile = snapshot.data;
-        if (profile == null) {
-          return WelcomeScreen(onSave: _saveProfile);
+        if (!_hasRestoredProgress) {
+          _restoreProgress(snapshot.requireData);
+          _hasRestoredProgress = true;
         }
-
-        return FutureBuilder<FocusTasksProgress>(
-          future: _progressFuture,
-          builder: (context, progressSnapshot) {
-            if (progressSnapshot.connectionState != ConnectionState.done) {
-              return const _ProgressLoadingScreen();
-            }
-            if (progressSnapshot.hasError) {
-              return _ProgressErrorScreen(onRetry: _retryProgressLoad);
-            }
-            if (!_hasRestoredProgress) {
-              _restoreProgress(progressSnapshot.requireData);
-              _hasRestoredProgress = true;
-            }
-            return _buildHome(context, profile);
-          },
-        );
+        return _buildHome(context, widget.profile);
       },
     );
   }
@@ -572,7 +1053,25 @@ class _HomePageState extends State<HomePage>
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
           children: [
-            const _BrandHeader(),
+            Row(
+              children: [
+                Expanded(child: const _BrandHeader()),
+                FilledButton.icon(
+                  key: const Key('finish-day-button'),
+                  onPressed: _finishDay,
+                  icon: const Icon(Icons.exit_to_app_rounded),
+                  label: const Text('Finalizar día'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 42),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 28),
             _PersonalGreeting(profile: profile),
             const SizedBox(height: 24),
@@ -588,13 +1087,13 @@ class _HomePageState extends State<HomePage>
               children: [
                 Expanded(
                   child: Text(
-                    'Tu foco de hoy',
+                    'Tu reto del día',
                     style: Theme.of(context).textTheme.titleLarge
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
                 Text(
-                  '$_completedCount/${_tasks.length} hechas',
+                  '$_completedCount/${_tasks.length} tareas hechas',
                   style: Theme.of(context).textTheme.labelLarge
                       ?.copyWith(color: const Color(0xFF64756D)),
                 ),
@@ -605,7 +1104,7 @@ class _HomePageState extends State<HomePage>
               const _EmptyTasksCard()
             else if (pendingTasks.isEmpty)
               const _EmptyTasksCard(
-                title: '¡Todo el foco de hoy está hecho!',
+                title: '¡Misión cumplida por hoy!',
                 message: 'Tu mascota celebra cada paso que has dado.',
               ),
             for (final task in visiblePendingTasks)
@@ -659,6 +1158,26 @@ class _HomePageState extends State<HomePage>
                 for (final task in completedTasks)
                   _buildTaskCard(task, profile.avatar),
             ],
+            const SizedBox(height: 14),
+            _DailyStickerCard(
+              completedTasks: _dailyCompletions[_todayKey]?.length ?? 0,
+              unlockedStickerCount: _stickerUnlockDates.length,
+              stickerUnlockedToday:
+                  (_dailyCompletions[_todayKey]?.length ?? 0) >=
+                  FocusPawsFeatures.tasksPerDailySticker,
+              showAlbum: FocusPawsFeatures.showStickerAlbum,
+              onPressed: FocusPawsFeatures.showStickerAlbum
+                  ? () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (context) => StickerAlbumPage(
+                            unlockedDates: _stickerUnlockDates,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
+            ),
           ],
         ),
       ),
@@ -693,10 +1212,234 @@ class _HomePageState extends State<HomePage>
   );
 }
 
+class _AccountLauncher extends StatelessWidget {
+  const _AccountLauncher({
+    required this.profiles,
+    required this.onSelect,
+    required this.onCreate,
+  });
+
+  final List<UserProfile> profiles;
+  final ValueChanged<UserProfile> onSelect;
+  final VoidCallback? onCreate;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+        children: [
+          const _BrandHeader(),
+          const SizedBox(height: 32),
+          Text(
+            '¿Quién va a jugar hoy?',
+            style: Theme.of(context).textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Elige tu perfil para continuar con tus tareas y tu progreso.',
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: const Color(0xFF52685B)),
+          ),
+          const SizedBox(height: 22),
+          for (final profile in profiles)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: OutlinedButton(
+                key: Key('select-profile-${profile.id}'),
+                onPressed: () => onSelect(profile),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.all(18),
+                  backgroundColor: Colors.white,
+                  alignment: Alignment.centerLeft,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      profile.avatar.emoji,
+                      style: const TextStyle(fontSize: 36),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        profile.name,
+                        style: Theme.of(context).textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+                  ],
+                ),
+              ),
+            ),
+          if (onCreate != null)
+            OutlinedButton.icon(
+              key: const Key('create-profile-button'),
+              onPressed: onCreate,
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: const Text('Crear otro usuario'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(56),
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _UserProfileHub extends StatelessWidget {
+  const _UserProfileHub({
+    required this.profile,
+    required this.unlockedDates,
+    required this.onEditName,
+    required this.onEditAvatar,
+    required this.onEnterTasks,
+    required this.onBack,
+  });
+
+  final UserProfile profile;
+  final List<String> unlockedDates;
+  final VoidCallback onEditName;
+  final VoidCallback onEditAvatar;
+  final VoidCallback onEnterTasks;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+        children: [
+          const _BrandHeader(),
+          const SizedBox(height: 24),
+          Text(
+            'Tu espacio, ${profile.name}',
+            style: Theme.of(context).textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 18),
+          _ProfileActionCard(
+            key: const Key('edit-avatar-option'),
+            icon: Text(
+              profile.avatar.emoji,
+              style: const TextStyle(fontSize: 30),
+            ),
+            title: 'Animalito escogido',
+            subtitle: 'Cambiar a otro animalito',
+            onPressed: onEditAvatar,
+          ),
+          const SizedBox(height: 12),
+          _ProfileActionCard(
+            key: const Key('edit-name-option'),
+            icon: const Icon(Icons.person_outline_rounded, size: 30),
+            title: 'Tu nombre',
+            subtitle: profile.name,
+            onPressed: onEditName,
+          ),
+          if (FocusPawsFeatures.showStickerAlbum) ...[
+            const SizedBox(height: 12),
+            _ProfileActionCard(
+              key: const Key('open-album-option'),
+              icon: const Icon(Icons.collections_bookmark_outlined, size: 30),
+              title: 'Habitación y álbum de pegatinas',
+              subtitle: '${unlockedDates.length} pegatinas desbloqueadas',
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (context) =>
+                      StickerAlbumPage(unlockedDates: unlockedDates),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 22),
+          FilledButton.icon(
+            key: const Key('enter-tasks-button'),
+            onPressed: onEnterTasks,
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text('Ir a tareas'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(58),
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          TextButton(onPressed: onBack, child: const Text('Volver a usuarios')),
+        ],
+      ),
+    ),
+  );
+}
+
+class _ProfileActionCard extends StatelessWidget {
+  const _ProfileActionCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onPressed,
+  });
+
+  final Widget icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+    onPressed: onPressed,
+    style: OutlinedButton.styleFrom(
+      padding: const EdgeInsets.all(16),
+      backgroundColor: Colors.white,
+      alignment: Alignment.centerLeft,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    ),
+    child: Row(
+      children: [
+        SizedBox(width: 44, height: 44, child: Center(child: icon)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: const Color(0xFF64756D)),
+              ),
+            ],
+          ),
+        ),
+        const Icon(Icons.chevron_right_rounded),
+      ],
+    ),
+  );
+}
+
 class WelcomeScreen extends StatefulWidget {
-  const WelcomeScreen({super.key, required this.onSave});
+  const WelcomeScreen({
+    super.key,
+    required this.onSave,
+    this.initialProfile,
+    this.editNameOnly = false,
+    this.editAvatarOnly = false,
+    this.onCancel,
+  });
 
   final Future<void> Function(UserProfile profile) onSave;
+  final UserProfile? initialProfile;
+  final bool editNameOnly;
+  final bool editAvatarOnly;
+  final VoidCallback? onCancel;
 
   @override
   State<WelcomeScreen> createState() => _WelcomeScreenState();
@@ -709,13 +1452,25 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   bool _isSaving = false;
 
   @override
+  void initState() {
+    super.initState();
+    final profile = widget.initialProfile;
+    if (profile != null) {
+      _nameController.text = profile.name;
+      _selectedAvatar = profile.avatar;
+    }
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
   }
 
   Future<void> _saveProfile() async {
-    final name = _nameController.text.trim();
+    final name = widget.editAvatarOnly
+        ? widget.initialProfile!.name
+        : _nameController.text.trim();
     if (name.isEmpty) {
       setState(() {
         _errorMessage = 'Escribe tu nombre para continuar.';
@@ -730,7 +1485,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     });
 
     try {
-      await widget.onSave(UserProfile(name: name, avatar: _selectedAvatar));
+      await widget.onSave(
+        UserProfile(
+          id: widget.initialProfile?.id ?? 'default',
+          name: name,
+          avatar: widget.editNameOnly
+              ? widget.initialProfile!.avatar
+              : _selectedAvatar,
+        ),
+      );
     } on Exception {
       if (!mounted) return;
       setState(() {
@@ -778,14 +1541,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    '¡Qué bueno tenerte aquí!',
+                    widget.editNameOnly
+                        ? 'Cambia tu nombre'
+                        : widget.editAvatarOnly
+                        ? 'Elige tu animalito'
+                        : '¡Qué bueno tenerte aquí!',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineSmall
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Personaliza tu espacio antes de empezar.',
+                    widget.initialProfile == null
+                        ? 'Personaliza tu espacio antes de empezar.'
+                        : 'Actualiza tu perfil cuando quieras.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium
                         ?.copyWith(color: const Color(0xFF52685B)),
@@ -794,157 +1563,177 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
             ),
             const SizedBox(height: 26),
-            Text(
-              '¿Cuál es tu nombre?',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              key: const Key('profile-name-field'),
-              controller: _nameController,
-              autofocus: false,
-              enabled: !_isSaving,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.done,
-              maxLength: 24,
-              onSubmitted: (_) => _saveProfile(),
-              onChanged: (_) {
-                if (_errorMessage != null) {
-                  setState(() {
-                    _errorMessage = null;
-                  });
-                }
-              },
-              decoration: InputDecoration(
-                hintText: 'Escribe tu nombre',
-                errorText: _errorMessage,
-                counterText: '',
-                filled: true,
-                fillColor: Colors.white,
-                prefixIcon: const Icon(Icons.person_outline_rounded),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF28644F),
-                    width: 1.5,
+            if (!widget.editAvatarOnly) ...[
+              Text(
+                '¿Cuál es tu nombre?',
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                key: const Key('profile-name-field'),
+                controller: _nameController,
+                autofocus: false,
+                enabled: !_isSaving,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.done,
+                maxLength: 24,
+                onSubmitted: (_) => _saveProfile(),
+                onChanged: (_) {
+                  if (_errorMessage != null) {
+                    setState(() {
+                      _errorMessage = null;
+                    });
+                  }
+                },
+                decoration: InputDecoration(
+                  hintText: 'Escribe tu nombre',
+                  errorText: _errorMessage,
+                  counterText: '',
+                  filled: true,
+                  fillColor: Colors.white,
+                  prefixIcon: const Icon(Icons.person_outline_rounded),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF28644F),
+                      width: 1.5,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 22),
-            Text(
-              'Elige tu animalito',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              'Acompañará tu progreso y celebrará contigo.',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: const Color(0xFF64756D)),
-            ),
-            const SizedBox(height: 12),
-            GridView.builder(
-              key: const Key('profile-avatar-options'),
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: UserAvatar.values.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisExtent: 92,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
+            ],
+            if (!widget.editNameOnly) ...[
+              const SizedBox(height: 22),
+              Text(
+                'Elige tu animalito',
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
-              itemBuilder: (context, index) {
-                final avatar = UserAvatar.values[index];
-                final isSelected = avatar == _selectedAvatar;
-                return Semantics(
-                  button: true,
-                  selected: isSelected,
-                  label: avatar.label,
-                  child: Material(
-                    color: isSelected ? const Color(0xFFE4F0E8) : Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                      side: BorderSide(
-                        color: isSelected
-                            ? const Color(0xFF28644F)
-                            : const Color(0xFFE3E9E3),
-                        width: isSelected ? 2 : 1,
+              const SizedBox(height: 5),
+              Text(
+                'Acompañará tu progreso y celebrará contigo.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: const Color(0xFF64756D)),
+              ),
+              const SizedBox(height: 12),
+              GridView.builder(
+                key: const Key('profile-avatar-options'),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: UserAvatar.values.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisExtent: 92,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                ),
+                itemBuilder: (context, index) {
+                  final avatar = UserAvatar.values[index];
+                  final isSelected = avatar == _selectedAvatar;
+                  return Semantics(
+                    button: true,
+                    selected: isSelected,
+                    label: avatar.label,
+                    child: Material(
+                      color: isSelected
+                          ? const Color(0xFFE4F0E8)
+                          : Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: BorderSide(
+                          color: isSelected
+                              ? const Color(0xFF28644F)
+                              : const Color(0xFFE3E9E3),
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        key: Key('profile-avatar-${avatar.id}'),
+                        onTap: _isSaving
+                            ? null
+                            : () {
+                                setState(() {
+                                  _selectedAvatar = avatar;
+                                });
+                              },
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              avatar.emoji,
+                              style: const TextStyle(fontSize: 30),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              avatar.label,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    fontWeight: isSelected
+                                        ? FontWeight.w800
+                                        : FontWeight.w600,
+                                    color: const Color(0xFF355544),
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      key: Key('profile-avatar-${avatar.id}'),
-                      onTap: _isSaving
-                          ? null
-                          : () {
-                              setState(() {
-                                _selectedAvatar = avatar;
-                              });
-                            },
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            avatar.emoji,
-                            style: const TextStyle(fontSize: 30),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            avatar.label,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  fontWeight: isSelected
-                                      ? FontWeight.w800
-                                      : FontWeight.w600,
-                                  color: const Color(0xFF355544),
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(24, 10, 24, 16),
-        child: FilledButton(
-          key: const Key('save-profile-button'),
-          onPressed: _isSaving ? null : _saveProfile,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(58),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.onCancel != null)
+              TextButton(
+                onPressed: _isSaving ? null : widget.onCancel,
+                child: const Text('Volver'),
+              ),
+            FilledButton(
+              key: const Key('save-profile-button'),
+              onPressed: _isSaving ? null : _saveProfile,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(58),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              child: _isSaving
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      widget.initialProfile == null
+                          ? 'Empezar'
+                          : 'Guardar cambios',
+                    ),
             ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-          ),
-          child: _isSaving
-              ? const SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Text('Empezar'),
+          ],
         ),
       ),
     );
@@ -1945,15 +2734,6 @@ class _PetCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'TU COMPAÑERO DE HOY',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: const Color(0xFF4F6C5D),
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 8),
                 Row(
                   children: [
                     Flexible(
@@ -1987,7 +2767,7 @@ class _PetCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Text(
                   earnedPoints == 0
                       ? 'Listo para empezar contigo.'
@@ -1995,7 +2775,7 @@ class _PetCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodyMedium
                       ?.copyWith(color: const Color(0xFF52685B)),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 Text(
                   'Progreso hacia nivel ${progress.nextLevel}',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -2030,13 +2810,6 @@ class _PetCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${progress.totalPoints} pts totales',
-                  key: const Key('pet-total-points'),
-                  style: Theme.of(context).textTheme.labelSmall
-                      ?.copyWith(color: const Color(0xFF52685B)),
                 ),
                 if (bonusRest > Duration.zero || perseveranceSnacks > 0) ...[
                   const SizedBox(height: 8),
@@ -2078,6 +2851,201 @@ class _PetCard extends StatelessWidget {
     if (seconds == 0) return '$minutes min';
     return '$minutes min $seconds s';
   }
+}
+
+class _DailyStickerCard extends StatelessWidget {
+  const _DailyStickerCard({
+    required this.completedTasks,
+    required this.unlockedStickerCount,
+    required this.stickerUnlockedToday,
+    required this.showAlbum,
+    required this.onPressed,
+  });
+
+  final int completedTasks;
+  final int unlockedStickerCount;
+  final bool stickerUnlockedToday;
+  final bool showAlbum;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xFFEAF2EB),
+    borderRadius: BorderRadius.circular(20),
+    child: InkWell(
+      key: const Key('open-sticker-album-button'),
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+        child: Row(
+          children: [
+            const Text('🌟', style: TextStyle(fontSize: 32)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    showAlbum ? 'Álbum de pegatinas' : 'Progreso de hoy',
+                    // Keep daily progress visible if the premium album is hidden.
+                    style: Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    stickerUnlockedToday
+                        ? '¡Pegatina de hoy desbloqueada!'
+                        : '$completedTasks de '
+                              '${FocusPawsFeatures.tasksPerDailySticker} tareas '
+                              'para la pegatina de hoy',
+                    key: const Key('daily-sticker-progress'),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: const Color(0xFF52685B)),
+                  ),
+                  Text(
+                    showAlbum
+                        ? '$unlockedStickerCount '
+                              '${unlockedStickerCount == 1 ? 'pegatina' : 'pegatinas'} '
+                              'en tu colección'
+                        : 'Progreso de hoy',
+                    key: const Key('sticker-collection-count'),
+                    style: Theme.of(context).textTheme.labelSmall
+                        ?.copyWith(color: const Color(0xFF64756D)),
+                  ),
+                ],
+              ),
+            ),
+            if (showAlbum) const Icon(Icons.chevron_right_rounded),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _StickerDesign {
+  const _StickerDesign(this.emoji, this.name);
+
+  final String emoji;
+  final String name;
+}
+
+const _stickerDesigns = [
+  _StickerDesign('🌟', 'Estrella brillante'),
+  _StickerDesign('🐾', 'Huella amiga'),
+  _StickerDesign('🍀', 'Trébol de la suerte'),
+  _StickerDesign('🎈', 'Globo alegre'),
+  _StickerDesign('🦋', 'Mariposa tranquila'),
+  _StickerDesign('🌈', 'Arcoíris de colores'),
+  _StickerDesign('🍓', 'Fresa dulce'),
+  _StickerDesign('🌙', 'Luna serena'),
+  _StickerDesign('🧸', 'Osito tierno'),
+  _StickerDesign('🎨', 'Paleta creativa'),
+  _StickerDesign('🌻', 'Girasol sonriente'),
+  _StickerDesign('💎', 'Gema brillante'),
+];
+
+class StickerAlbumPage extends StatelessWidget {
+  const StickerAlbumPage({super.key, required this.unlockedDates});
+
+  final List<String> unlockedDates;
+
+  String _displayDate(String dateKey) {
+    final date = DateTime.parse(dateKey);
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Álbum de pegatinas')),
+    body: SafeArea(
+      child: unlockedDates.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('📒', style: TextStyle(fontSize: 64)),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Tu álbum empieza aquí',
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Completa tres tareas en un mismo día para ganar '
+                      'una pegatina.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                Text(
+                  'Cada pegatina recuerda un día en que completaste '
+                  '${FocusPawsFeatures.tasksPerDailySticker} tareas.',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 20),
+                GridView.builder(
+                  key: const Key('sticker-album-grid'),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: unlockedDates.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisExtent: 132,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
+                  itemBuilder: (context, index) {
+                    final design =
+                        _stickerDesigns[index % _stickerDesigns.length];
+                    final date = unlockedDates[index];
+                    return Container(
+                      key: Key('sticker-$date'),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF2EB),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFD8E6DA)),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            design.emoji,
+                            style: const TextStyle(fontSize: 38),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            design.name,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            _displayDate(date),
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: const Color(0xFF64756D)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+    ),
+  );
 }
 
 class _PetRewardBadge extends StatelessWidget {

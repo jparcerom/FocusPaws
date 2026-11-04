@@ -56,8 +56,14 @@ Para que el sistema de la mascota funcione y sea sostenible para ti a nivel de d
 	• Suena un efecto de sonido satisfactorio ("¡Pop!" / "¡Chinchín!").
 	• La pantalla lanza confeti digital parpadeante.
 	• El huevo recibe "puntos de enfoque" hasta que eclosiona en una pequeña criatura.
-• Progresión por niveles: Cada tarea otorga puntos según su tamaño: 5, 15 o 30. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180 cada uno; y los niveles 6 a 8, 210 cada uno. El requisito aumenta 30 puntos cada tres niveles. La insignia del animal elegido muestra el nivel actual, celebra cada subida y la barra muestra el avance y objetivo del siguiente nivel. Los puntos totales se mantienen visibles para que el progreso anterior nunca parezca perdido.
-• Personalización inicial: En el primer inicio, la persona elige su nombre y uno de cinco animales. El saludo de la pantalla principal muestra solo su nombre; el animal seleccionado aparece en el recuadro de progreso y es quien celebra las subidas de nivel. Los animales se llaman Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo) y Bruno (oso).
+• Progresión por niveles: Cada tarea otorga puntos según su tamaño: 10, 20 o 40. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180 cada uno; y los niveles 6 a 8, 210 cada uno. El requisito aumenta 30 puntos cada tres niveles. La insignia del animal elegido muestra el nivel actual, celebra cada subida y la barra muestra el avance y objetivo del siguiente nivel. Los puntos acumulados se conservan para calcular niveles, pero el total de por vida no se muestra para mantener la pantalla sencilla.
+• Personalización inicial: En el primer inicio, la persona elige su nombre y uno de seis animales, organizados en dos filas de tres. El saludo de la pantalla principal muestra solo su nombre; el animal seleccionado aparece en el recuadro de progreso y es quien celebra las subidas de nivel. Los animales se llaman Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) y Panda.
+
+### Ajustes acordados a la pantalla de tareas
+
+- La cabecera muestra «FocusPaws» y el botón «Finalizar día» alineado a su derecha; el acceso al perfil se mantiene en el selector y su panel, no en la pantalla de tareas.
+- La tarjeta de progreso omite el encabezado «Tu compañero de hoy» y la línea de puntos totales. Conserva el nombre y nivel de la mascota, el progreso al siguiente nivel y las recompensas disponibles.
+- La sección de tareas se titula «Tu reto del día», el contador usa el formato «0/0 tareas hechas» y al completar todo se muestra «¡Misión cumplida por hoy!».
 
 -------------------
 
@@ -84,7 +90,7 @@ Estructura de la Pantalla (De arriba a abajo):
 Cuando el temporizador visual llega a cero, el usuario entra en la fase de subidón de dopamina sano:
 • La pantalla se llena de una animación festiva (confeti digital o huellas parpadeantes).
 • La mascota salta de alegría y ladra o celebra con un sonido muy satisfactorio.
-• Aparece un mensaje gigante con la recompensa del tamaño elegido: "¡Conseguido! Has ganado +5, +15 o +30 puntos de energía para tu mascota".
+• Aparece un mensaje gigante con la recompensa del tamaño elegido: "¡Conseguido! Has ganado +10, +20 o +40 puntos de energía para tu mascota".
 
 ------------------------------
 
@@ -125,7 +131,7 @@ text
 │                                                        │
 │ 🎉 Animación de Confeti / Sonido "¡Pop!"               │
 │ 🐕 Mascota saltando de alegría                         │
-│ 💎 Puntos según el tamaño de la tarea (5/15/30)         │
+│ 💎 Puntos según el tamaño de la tarea (10/20/40)        │
 └───────────────────────────┬────────────────────────────┘
                             │
                (Toca el botón "Continuar")
@@ -154,7 +160,7 @@ Bloque 2: Desarrollo de la Interfaz Visual (Frontend)
 Bloque 3: Lógica de Gamificación y Recompensa
 
 • Tarea 3.1: Crear la lógica de Final de Temporizador. Cuando el círculo se vacíe, permite añadir una prórroga visual de 5 minutos, pasar al modo libre ascendente o finalizar la tarea.
-• Tarea 3.2: Implementar la Pantalla de Recompensa. Añade un activador de sonido satisfactorio (un archivo de audio corto tipo .mp3) y concede los puntos asociados al tamaño de la tarea (5, 15 o 30) al pulsar "Continuar".
+• Tarea 3.2: Implementar la Pantalla de Recompensa. Añade un activador de sonido satisfactorio (un archivo de audio corto tipo .mp3) y concede los puntos asociados al tamaño de la tarea (10, 20 o 40) al pulsar "Continuar".
 
 -------------------------------------
 
@@ -169,7 +175,7 @@ Imagina que la tarea es un Bloque estándar de 30 minutos y el usuario la termin
 • El error común en otras apps: Obligar al usuario a esperar a que el reloj llegue a cero o no darle los puntos completos por "cancelar" el temporizador. Esto genera frustración.
 • Cómo debe funcionar en FocusPaws: Habilitamos un botón visible que dice "¡Terminé antes!".
 • La lógica de la recompensa:
-	• ¡Premio por eficiencia! Se otorgan a la mascota los puntos completos del tamaño elegido: +5, +15 o +30.
+	• ¡Premio por eficiencia! Se otorgan a la mascota los puntos completos del tamaño elegido: +10, +20 o +40.
 	• La app lo celebra con un mensaje de refuerzo positivo adaptado: "¡Guau! Tu cerebro ha volado hoy. [Nombre de la mascota] está orgulloso de tu velocidad".
 	• El tiempo restante del temporizador se convierte automáticamente en "Tiempo de Bonificación para Descanso" (se suma a su próximo descanso para que pueda relajarse sin culpa).
 
@@ -181,7 +187,7 @@ El temporizador elegido para la tarea llega a cero, pero el usuario todavía est
 	1. "Necesito 5 minutos más": Añade un pequeño minitemporizador visual extra de inmediato sin salir de la pantalla.
 	2. "Seguir en modo libre": El reloj empieza a contar hacia adelante (en positivo) registrando cuánto tiempo extra necesita, de forma muy discreta.
 • La lógica de la recompensa:
-	• Cuando el usuario por fin pulsa "Finalizar tarea", recibe los puntos base de su tarea (+5, +15 o +30) por haber sido perseverante y no abandonar.
+	• Cuando el usuario por fin pulsa "Finalizar tarea", recibe los puntos base de su tarea (+10, +20 o +40) por haber sido perseverante y no abandonar.
 	• Extra por esfuerzo: Si completó más de 10 minutos extra, la mascota recibe un "snack" o un objeto cosmético coleccionable como recompensa por su resistencia.
 
 🎨 Resumen visual para el flujo de programación
@@ -216,9 +222,9 @@ Para evitar el abuso del botón "¡Terminé antes!", añadiremos una regla matem
 Definiendo el tiempo estimado de la tarea, tu base de datos y la lógica de recompensas quedarían perfectamente equilibradas así:
 
 Tamaño de Tarea	Tiempo Estimado	Puntos Base para la Mascota	Bonificación Máxima de Descanso
-Paso Corto	15 minutos	+5 pts	Máximo 3 minutos extra
-Bloque Estándar	30 minutos	+15 pts	Máximo 7 minutos extra
-Gran Esfuerzo	45 minutos	+30 pts	Máximo 10 minutos extra
+Paso Corto	15 minutos	+10 pts	Máximo 3 minutos extra
+Bloque Estándar	30 minutos	+20 pts	Máximo 7 minutos extra
+Gran Esfuerzo	45 minutos	+40 pts	Máximo 10 minutos extra
 
 
 🛠️ Impacto en tus Tareas Técnicas
@@ -231,13 +237,50 @@ Con esta solución el sistema queda blindado contra las trampas del cerebro
 - La tabla de recompensas por tamaño sustituye a la recompensa fija anterior y se aplica tanto al completar desde Inicio como al terminar una sesión de foco, incluso después de una prórroga o en modo libre.
 - Si se pulsa «¡Terminé antes!» antes de consumir la mitad del tiempo estimado, no se suman los minutos restantes al saldo de descanso. Se mantiene el descanso estándar y se muestra un mensaje amable.
 - Si se ha completado al menos la mitad, el tiempo restante se suma al saldo de descanso hasta el máximo indicado para el tamaño. El excedente no se acumula en otra hucha.
-- Las tareas guardadas antes de definir tamaños se consideran Bloque estándar (30 minutos y 15 puntos).
+- Las tareas guardadas antes de definir tamaños se consideran Bloque estándar (30 minutos y 20 puntos al completarse con la nueva tabla). Los puntos ya obtenidos antes del cambio se conservan sin ajustes retroactivos.
 
 -------------------------------------
+
+## Gestión de perfiles
+
+### Decisiones acordadas para esta implementación
+
+- Al abrir la aplicación con perfiles guardados se muestra un selector. Cada botón de perfil muestra el nombre y el animal escogido.
+- Al seleccionar un perfil se abre un panel intermedio con botones grandes para cambiar el animal, editar el nombre, abrir la habitación/álbum y acceder a las tareas.
+- «Finalizar día» vuelve al selector sin borrar tareas, puntos, recompensas ni el historial diario.
+- Los datos de progreso se guardan por identificador de perfil. Al actualizar desde la versión de un solo perfil, el perfil existente conserva el registro anterior; los perfiles nuevos empiezan con progreso independiente.
+- La creación de usuarios adicionales queda preparada para la versión de pago: está visible en desarrollo y oculta de forma predeterminada en compilaciones release. La compilación de desarrollo puede habilitarla con `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; en la versión gratuita solo aparece el perfil predeterminado y los demás datos no se eliminan. Esta bandera todavía no sustituye la integración de compra.
+
+------------------------------------
+
+## Sistema de persistencia
+
+1. El Sistema de Persistencia: El "Álbum de Logros"
+
+El cerebro con TDAH sufre a menudo de falta de memoria prospectiva y sensación de "no estar avanzando". Guardar el historial de forma persistente (usando bases de datos locales como Room o DataStore en Android de forma nativa, o Hive/Isar si usas Flutter) es clave para el tratamiento psicológico.
+
+Vamos a guardar estos datos para que se recuperen en cada sesión y no se pierdan con el día a día.
+Aquí vamos a prepararlo de tal manera que en la versión gratuita no se muestre la habitación que hablamos a continuación pero si que guarde el progreso en la pantalla principal.
+
+Vamos a dejarlo preparado para que cuando esté la aplicación desarrollada completamente se puedan bloquear los aspectos definidos para la versión de pago. Las iremos definiendo a medida que avance el desarrollo, mientras estamos en desarrollo necesitamos verlo todo.
+
+• Cómo implementarlo visualmente: No crees gráficos estadísticos aburridos (estilo Excel de empresa). Crea la "Habitación de la Mascota" o un "Álbum de Pegatinas".
+• La lógica: Cada día que el usuario complete sus 3 tareas persistidas, el sistema desbloquea una pegatina, una prenda para vestir a su mascota o un mueble para su habitación virtual.
+• El beneficio: Al ver el historial de forma gráfica, el usuario ve el impacto de su esfuerzo acumulado de un vistazo.
+
+### Decisiones acordadas para esta implementación
+
+- Se implementa un Álbum de Pegatinas. Cada pegatina representa un día local en el que se completaron tres tareas distintas; las finalizaciones desde Inicio y desde el Modo Foco cuentan.
+- El avance del día se reinicia al cambiar la fecha local. Volver a marcar la misma tarea como completada no suma más de una vez en ese día.
+- Las tareas, puntos, tamaños, saldo de descanso, snacks, finalizaciones diarias y fechas de pegatinas desbloqueadas se guardan juntos en el registro local. Los datos antiguos siguen siendo compatibles; no se atribuyen a fechas pasadas las tareas que no tenían historial diario.
+- El álbum se muestra durante el desarrollo. La bandera `FocusPawsFeatures.showStickerAlbum` permite ocultarlo posteriormente; el progreso diario permanece visible en Inicio.
+
+------------------------------------
 
 🛠️ Entorno de desarrollo y forma de trabajo
 
 • Android Studio está instalado en `F:\Android\Android Studio`; el Android SDK y el emulador están en `F:\Android\Sdk`. Usa estas rutas al configurar o ejecutar las herramientas de Android; no busques primero en las rutas predeterminadas.
 • El SDK de Flutter se instalará en `F:\Android\flutter`.
+• El emulador Pixel 6 tiene Gboard configurado inicialmente en inglés (EE. UU.). Para escribir con tildes, añade español en Ajustes → Sistema → Teclado → Teclado en pantalla → Gboard → Idiomas; la aplicación no filtra las letras acentuadas.
 • Desarrollaremos la aplicación de forma incremental: completaremos y verificaremos cada funcionalidad antes de pasar a la siguiente.
 • La interfaz debe ser cuidada, clara e intuitiva, con especial atención a reducir la carga cognitiva y la saturación visual para las personas con TDAH.
