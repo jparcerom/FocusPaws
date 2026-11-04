@@ -60,7 +60,7 @@ To keep the pet system sustainable to build for the initial MVP, use simple prog
   - Play a satisfying sound effect ("Pop!" or a celebratory chime).
   - Show digital confetti on screen.
   - Award the egg "focus points" until it hatches into a small creature.
-- **Level progression:** Each completed task awards 15 points. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels. The avatar displays its current level and celebrates each level-up, and the bar shows progress toward the next level. Lifetime points stay visible so earlier progress is never lost.
+- **Level progression:** Each task awards 5, 15, or 30 points according to its selected size. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels. The avatar displays its current level and celebrates each level-up, and the bar shows progress toward the next level. Lifetime points stay visible so earlier progress is never lost.
 - **First-run personalization:** On first launch, users choose a name and one of five animals. The home-screen greeting shows only their name; the selected animal appears in the progress card and celebrates level-ups. The animals are named Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), and Bruno (bear).
 
 ---
@@ -90,7 +90,7 @@ When the visual timer reaches zero, the user enters a healthy dopamine boost:
 
 - The screen fills with a celebratory animation (digital confetti or flashing paw prints).
 - The pet jumps for joy and barks or celebrates with a satisfying sound.
-- A large message appears: **"You did it! You earned +15 energy points for your pet."**
+- A large message shows the reward for the selected task size: **"You did it! You earned +5, +15, or +30 energy points for your pet."**
 
 ---
 
@@ -132,7 +132,7 @@ This diagram shows the simplified user flow from opening the app to earning a re
 │                                                        │
 │ 🎉 Confetti animation / "Pop!" sound                   │
 │ 🐕 Happy, jumping pet                                  │
-│ 💎 +15 points awarded to the pet                       │
+│ 💎 Task-size reward (5/15/30 points)                   │
 └───────────────────────────┬────────────────────────────┘
                             │
                    (Tap "Continue")
@@ -155,13 +155,64 @@ If you are building this yourself (with Flutter/React Native or a no-code tool s
 ### Block 2: Visual interface (frontend)
 
 - **Task 2.1:** Design the home screen. Add a pet placeholder, a large button for adding tasks, and a dynamic list that reads tasks from the database.
-- **Task 2.2:** Implement the Add Task button. Tapping it should open a simple text field with an option to dictate in Spanish. Let users review and edit the transcription before saving. Saving should add the record to the database and refresh the screen immediately.
-- **Task 2.3:** Design the Focus Mode screen. Create an animated circular timer component (you could use a Flutter library such as `percent_indicator`) that starts at a fixed duration (for example, 25 minutes) and steadily reduces the colored circle.
+- **Task 2.2:** Implement the Add Task button. Tapping it should open a simple text field with an option to dictate in Spanish. Let users review and edit the transcription before saving. Offer three quick sizes: Short step (15 min), Standard block (30 min), and Big effort (45 min). Save the title and estimated duration, then refresh the screen immediately.
+- **Task 2.3:** Design the Focus Mode screen. Create an animated circular timer component (you could use a Flutter library such as `percent_indicator`) that uses the task estimate (15, 30, or 45 minutes) and steadily reduces the colored circle.
 
 ### Block 3: Gamification and rewards
 
-- **Task 3.1:** Implement the timer-completion logic. When the circle empties, automatically navigate to the success screen.
-- **Task 3.2:** Implement the reward screen. Add a satisfying sound trigger (a short `.mp3` file) and add +15 points to the pet's database value when the user taps **Continue**.
+- **Task 3.1:** Implement timer completion. When the circle empties, let users add a visual 5-minute extension, switch to count-up free mode, or finish the task.
+- **Task 3.2:** Implement the reward screen. Add a satisfying sound trigger (a short `.mp3` file) and award the task-size points (5, 15, or 30) when the user taps **Continue**.
+
+---
+
+## Focus Mode behavior
+
+FocusPaws should adapt to variable productivity windows and let users finish a task without waiting for the timer.
+
+### Scenario 1: The user finishes before the timer expires
+
+The user can tap **"I finished early!"** at any time during focus.
+
+- The pet receives the full points for the selected task size: 5, 15, or 30.
+- Show positive, pet-specific feedback, such as: "Wow! Your brain flew today. [Pet name] is proud of your speed."
+- If at least half of the estimated focus block has elapsed, add the remaining timer duration to the bonus-rest balance, up to the cap for that task size.
+- If the user finishes before half of the estimated block has elapsed, award the points but do not add the remaining time to the rest balance. Keep the standard rest and show a friendly explanation.
+
+### Scenario 2: The timer expires before the task is done
+
+Do not treat the task as failed or force the user to take a break. Move to a calm, "Zen" state with these choices:
+
+1. **"I need 5 more minutes"** starts a visual 5-minute extension without leaving the screen.
+2. **"Continue in free mode"** starts a discreet count-up timer to track additional focus time.
+
+When the user taps **"Finish task,"** award the points for the selected task size. Completing after more than 10 extra minutes also grants a collectible snack.
+
+| User action | Timer state | Destination | Reward |
+|---|---|---|---|
+| Taps "I finished early!" | Manually stopped | Reward screen | Task-size points and eligible bonus rest |
+| Timer expires after the task is done | Reaches 00:00 | Reward screen | Task-size points |
+| Timer expires while the task is unfinished | Reaches 00:00 | Extension / free mode | Task-size points on completion; snack after more than 10 extra minutes |
+
+## Time estimated for each task
+
+### Quick size selection
+
+Do not ask users to type a duration. Offer three task-size buttons when creating a task:
+
+| Task size | Estimated time | Pet points | Maximum bonus rest |
+|---|---:|---:|---:|
+| Short step | 15 minutes | 5 | 3 minutes |
+| Standard block | 30 minutes | 15 | 7 minutes |
+| Big effort | 45 minutes | 30 | 10 minutes |
+
+Do not offer durations above 45 or 60 minutes; encourage users to split larger tasks into smaller subtasks.
+
+### Agreed implementation decisions
+
+- The size-based reward table replaces the previous fixed reward and applies whether a task is completed from Home or in a focus session, including after an extension or in free mode.
+- If **"I finished early!"** is tapped before half of the estimated time has elapsed, do not add the remaining time to the bonus-rest balance. Keep the standard rest and show a friendly message.
+- Once at least half of the estimated block has elapsed, add the remaining time to the rest balance up to the size-specific cap. Any excess is discarded rather than stored in a separate bank.
+- Tasks saved before task sizes were introduced are treated as Standard blocks (30 minutes and 15 points).
 
 ---
 

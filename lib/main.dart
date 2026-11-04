@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -14,11 +15,15 @@ class FocusPawsApp extends StatelessWidget {
   const FocusPawsApp({
     super.key,
     this.profileStore,
-    this.focusDuration = const Duration(minutes: 25),
+    this.progressStore,
+    this.focusDuration,
+    this.overtimeBlockDuration = const Duration(minutes: 5),
   });
 
   final UserProfileStore? profileStore;
-  final Duration focusDuration;
+  final FocusTasksProgressStore? progressStore;
+  final Duration? focusDuration;
+  final Duration overtimeBlockDuration;
 
   static const _forest = Color(0xFF28644F);
   static const _ink = Color(0xFF1E3029);
@@ -49,7 +54,10 @@ class FocusPawsApp extends StatelessWidget {
       ),
       home: HomePage(
         profileStore: profileStore ?? SharedPreferencesUserProfileStore(),
+        progressStore:
+            progressStore ?? SharedPreferencesFocusTasksProgressStore(),
         focusDuration: focusDuration,
+        overtimeBlockDuration: overtimeBlockDuration,
       ),
     );
   }
@@ -80,6 +88,51 @@ enum UserAvatar {
     }
     return null;
   }
+}
+
+enum FocusTaskSize {
+  short(minutes: 15, points: 5, maxRestBonusMinutes: 3, label: 'Paso corto'),
+  standard(
+    minutes: 30,
+    points: 15,
+    maxRestBonusMinutes: 7,
+    label: 'Bloque estándar',
+  ),
+  long(
+    minutes: 45,
+    points: 30,
+    maxRestBonusMinutes: 10,
+    label: 'Gran esfuerzo',
+  );
+
+  const FocusTaskSize({
+    required this.minutes,
+    required this.points,
+    required this.maxRestBonusMinutes,
+    required this.label,
+  });
+
+  final int minutes;
+  final int points;
+  final int maxRestBonusMinutes;
+  final String label;
+
+  Duration get duration => Duration(minutes: minutes);
+  Duration get maxRestBonus => Duration(minutes: maxRestBonusMinutes);
+
+  static FocusTaskSize fromMinutes(int minutes) {
+    for (final size in values) {
+      if (size.minutes == minutes) return size;
+    }
+    throw const FormatException('Invalid estimated task duration.');
+  }
+}
+
+class FocusTaskDraft {
+  const FocusTaskDraft({required this.title, required this.size});
+
+  final String title;
+  final FocusTaskSize size;
 }
 
 class UserProfile {
@@ -117,15 +170,172 @@ class SharedPreferencesUserProfileStore implements UserProfileStore {
   }
 }
 
+class FocusTaskProgress {
+  const FocusTaskProgress({
+    required this.id,
+    required this.title,
+    required this.isCompleted,
+    required this.hasReceivedReward,
+    this.estimatedMinutes = 30,
+  });
+
+  final int id;
+  final String title;
+  final bool isCompleted;
+  final bool hasReceivedReward;
+  final int estimatedMinutes;
+
+  factory FocusTaskProgress.fromJson(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Invalid task progress entry.');
+    }
+
+    final id = value['id'];
+    final title = value['title'];
+    final isCompleted = value['isCompleted'];
+    final hasReceivedReward = value['hasReceivedReward'];
+    final estimatedMinutes = value['estimatedMinutes'] ?? 30;
+    if (id is! int ||
+        id < 0 ||
+        title is! String ||
+        title.trim().isEmpty ||
+        isCompleted is! bool ||
+        hasReceivedReward is! bool ||
+        estimatedMinutes is! int) {
+      throw const FormatException('Invalid task progress fields.');
+    }
+    FocusTaskSize.fromMinutes(estimatedMinutes);
+
+    return FocusTaskProgress(
+      id: id,
+      title: title,
+      isCompleted: isCompleted,
+      hasReceivedReward: hasReceivedReward,
+      estimatedMinutes: estimatedMinutes,
+    );
+  }
+
+  Map<String, Object> toJson() => {
+    'id': id,
+    'title': title,
+    'isCompleted': isCompleted,
+    'hasReceivedReward': hasReceivedReward,
+    'estimatedMinutes': estimatedMinutes,
+  };
+}
+
+class FocusTasksProgress {
+  FocusTasksProgress({
+    required List<FocusTaskProgress> tasks,
+    required this.points,
+    this.bonusRestSeconds = 0,
+    this.perseveranceSnacks = 0,
+  }) : tasks = List.unmodifiable(tasks) {
+    if (points < 0) throw ArgumentError.value(points, 'points');
+    if (bonusRestSeconds < 0) {
+      throw ArgumentError.value(bonusRestSeconds, 'bonusRestSeconds');
+    }
+    if (perseveranceSnacks < 0) {
+      throw ArgumentError.value(perseveranceSnacks, 'perseveranceSnacks');
+    }
+    final ids = tasks.map((task) => task.id).toSet();
+    if (ids.length != tasks.length) {
+      throw ArgumentError('Task IDs must be unique.');
+    }
+  }
+
+  final List<FocusTaskProgress> tasks;
+  final int points;
+  final int bonusRestSeconds;
+  final int perseveranceSnacks;
+
+  static const empty = FocusTasksProgress._(
+    tasks: [],
+    points: 0,
+    bonusRestSeconds: 0,
+    perseveranceSnacks: 0,
+  );
+
+  const FocusTasksProgress._({
+    required this.tasks,
+    required this.points,
+    required this.bonusRestSeconds,
+    required this.perseveranceSnacks,
+  });
+
+  factory FocusTasksProgress.fromJson(String json) {
+    final value = jsonDecode(json);
+    if (value is! Map<String, dynamic> ||
+        value['points'] is! int ||
+        value['tasks'] is! List<Object?> ||
+        (value['bonusRestSeconds'] != null &&
+            value['bonusRestSeconds'] is! int) ||
+        (value['perseveranceSnacks'] != null &&
+            value['perseveranceSnacks'] is! int)) {
+      throw const FormatException('Invalid saved task progress.');
+    }
+
+    final tasks = (value['tasks'] as List<Object?>)
+        .map(FocusTaskProgress.fromJson)
+        .toList();
+    try {
+      return FocusTasksProgress(
+        tasks: tasks,
+        points: value['points'] as int,
+        bonusRestSeconds: value['bonusRestSeconds'] as int? ?? 0,
+        perseveranceSnacks: value['perseveranceSnacks'] as int? ?? 0,
+      );
+    } on ArgumentError {
+      throw const FormatException('Invalid saved task progress.');
+    }
+  }
+
+  String toJson() => jsonEncode({
+    'points': points,
+    'bonusRestSeconds': bonusRestSeconds,
+    'perseveranceSnacks': perseveranceSnacks,
+    'tasks': tasks.map((task) => task.toJson()).toList(),
+  });
+}
+
+abstract interface class FocusTasksProgressStore {
+  Future<FocusTasksProgress> loadProgress();
+
+  Future<void> saveProgress(FocusTasksProgress progress);
+}
+
+class SharedPreferencesFocusTasksProgressStore
+    implements FocusTasksProgressStore {
+  static const _progressKey = 'focus_tasks_progress';
+
+  final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
+
+  @override
+  Future<FocusTasksProgress> loadProgress() async {
+    final json = await _preferences.getString(_progressKey);
+    return json == null
+        ? FocusTasksProgress.empty
+        : FocusTasksProgress.fromJson(json);
+  }
+
+  @override
+  Future<void> saveProgress(FocusTasksProgress progress) =>
+      _preferences.setString(_progressKey, progress.toJson());
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     required this.profileStore,
-    this.focusDuration = const Duration(minutes: 25),
+    required this.progressStore,
+    this.focusDuration,
+    this.overtimeBlockDuration = const Duration(minutes: 5),
   });
 
   final UserProfileStore profileStore;
-  final Duration focusDuration;
+  final FocusTasksProgressStore progressStore;
+  final Duration? focusDuration;
+  final Duration overtimeBlockDuration;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -136,8 +346,15 @@ class _HomePageState extends State<HomePage>
   final List<FocusTask> _tasks = [];
   int _nextTaskId = 0;
   int _earnedPoints = 0;
+  Duration _bonusRest = Duration.zero;
+  int _perseveranceSnacks = 0;
   late final AnimationController _levelUpController;
   late Future<UserProfile?> _profileFuture;
+  late Future<FocusTasksProgress> _progressFuture;
+  Future<void> _pendingProgressSave = Future<void>.value();
+  bool _hasRestoredProgress = false;
+  bool _showAllPendingTasks = false;
+  bool _showCompletedTasks = false;
 
   int get _completedCount => _tasks.where((task) => task.isCompleted).length;
 
@@ -149,6 +366,7 @@ class _HomePageState extends State<HomePage>
       duration: const Duration(milliseconds: 900),
     );
     _profileFuture = widget.profileStore.loadProfile();
+    _progressFuture = widget.progressStore.loadProgress();
   }
 
   @override
@@ -158,7 +376,7 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _addTask() async {
-    final title = await showModalBottomSheet<String>(
+    final draft = await showModalBottomSheet<FocusTaskDraft>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -166,11 +384,16 @@ class _HomePageState extends State<HomePage>
       builder: (context) => const AddTaskSheet(),
     );
 
-    if (!mounted || title == null) return;
+    if (!mounted || draft == null) return;
 
     setState(() {
-      _tasks.insert(0, FocusTask(id: _nextTaskId++, title: title));
+      _tasks.insert(
+        0,
+        FocusTask(id: _nextTaskId++, title: draft.title, size: draft.size),
+      );
+      _showAllPendingTasks = false;
     });
+    _persistProgress();
   }
 
   Future<void> _saveProfile(UserProfile profile) async {
@@ -187,6 +410,66 @@ class _HomePageState extends State<HomePage>
     });
   }
 
+  void _retryProgressLoad() {
+    setState(() {
+      _progressFuture = widget.progressStore.loadProgress();
+    });
+  }
+
+  void _persistProgress() {
+    final snapshot = FocusTasksProgress(
+      tasks: _tasks
+          .map(
+            (task) => FocusTaskProgress(
+              id: task.id,
+              title: task.title,
+              isCompleted: task.isCompleted,
+              hasReceivedReward: task.hasReceivedReward,
+              estimatedMinutes: task.size.minutes,
+            ),
+          )
+          .toList(),
+      points: _earnedPoints,
+      bonusRestSeconds: _bonusRest.inSeconds,
+      perseveranceSnacks: _perseveranceSnacks,
+    );
+    _pendingProgressSave = _pendingProgressSave
+        .catchError((Object _) {})
+        .then((_) => widget.progressStore.saveProgress(snapshot));
+    _pendingProgressSave.catchError((Object error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo guardar tu progreso: $error'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
+  }
+
+  void _restoreProgress(FocusTasksProgress progress) {
+    _tasks
+      ..clear()
+      ..addAll(
+        progress.tasks.map(
+          (task) => FocusTask(
+            id: task.id,
+            title: task.title,
+            isCompleted: task.isCompleted,
+            hasReceivedReward: task.hasReceivedReward,
+            size: FocusTaskSize.fromMinutes(task.estimatedMinutes),
+          ),
+        ),
+      );
+    _nextTaskId = _tasks.fold(
+      0,
+      (nextId, task) => math.max(nextId, task.id + 1),
+    );
+    _earnedPoints = progress.points;
+    _bonusRest = Duration(seconds: progress.bonusRestSeconds);
+    _perseveranceSnacks = progress.perseveranceSnacks;
+  }
+
   void _toggleTask(FocusTask task, bool isCompleted) {
     if (isCompleted && !task.isCompleted) {
       _completeTask(task);
@@ -196,20 +479,28 @@ class _HomePageState extends State<HomePage>
     setState(() {
       task.isCompleted = isCompleted;
     });
+    _persistProgress();
   }
 
-  void _completeTask(FocusTask task) {
+  void _completeTask(FocusTask task, [FocusSessionResult? result]) {
     var leveledUp = false;
     setState(() {
       task.isCompleted = true;
       if (!task.hasReceivedReward) {
         final previousLevel = PetProgress.fromTotalPoints(_earnedPoints).level;
-        _earnedPoints += 15;
+        _earnedPoints += task.size.points;
         task.hasReceivedReward = true;
+        if (result != null) {
+          _bonusRest += result.bonusRest;
+          if (result.overtime > const Duration(minutes: 10)) {
+            _perseveranceSnacks++;
+          }
+        }
         leveledUp =
             PetProgress.fromTotalPoints(_earnedPoints).level > previousLevel;
       }
     });
+    _persistProgress();
 
     if (leveledUp) {
       _levelUpController.forward(from: 0);
@@ -222,8 +513,10 @@ class _HomePageState extends State<HomePage>
         builder: (context) => FocusSessionPage(
           taskTitle: task.title,
           avatar: avatar,
-          focusDuration: widget.focusDuration,
-          onRewardContinue: () => _completeTask(task),
+          focusDuration: widget.focusDuration ?? task.size.duration,
+          taskSize: task.size,
+          overtimeBlockDuration: widget.overtimeBlockDuration,
+          onRewardContinue: (result) => _completeTask(task, result),
         ),
       ),
     );
@@ -247,12 +540,33 @@ class _HomePageState extends State<HomePage>
           return WelcomeScreen(onSave: _saveProfile);
         }
 
-        return _buildHome(context, profile);
+        return FutureBuilder<FocusTasksProgress>(
+          future: _progressFuture,
+          builder: (context, progressSnapshot) {
+            if (progressSnapshot.connectionState != ConnectionState.done) {
+              return const _ProgressLoadingScreen();
+            }
+            if (progressSnapshot.hasError) {
+              return _ProgressErrorScreen(onRetry: _retryProgressLoad);
+            }
+            if (!_hasRestoredProgress) {
+              _restoreProgress(progressSnapshot.requireData);
+              _hasRestoredProgress = true;
+            }
+            return _buildHome(context, profile);
+          },
+        );
       },
     );
   }
 
   Widget _buildHome(BuildContext context, UserProfile profile) {
+    final pendingTasks = _tasks.where((task) => !task.isCompleted).toList();
+    final completedTasks = _tasks.where((task) => task.isCompleted).toList();
+    final visiblePendingTasks = _showAllPendingTasks
+        ? pendingTasks
+        : pendingTasks.take(3).toList();
+
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -266,6 +580,8 @@ class _HomePageState extends State<HomePage>
               earnedPoints: _earnedPoints,
               levelUpAnimation: _levelUpController,
               avatar: profile.avatar,
+              bonusRest: _bonusRest,
+              perseveranceSnacks: _perseveranceSnacks,
             ),
             const SizedBox(height: 30),
             Row(
@@ -285,19 +601,64 @@ class _HomePageState extends State<HomePage>
               ],
             ),
             const SizedBox(height: 14),
-            if (_tasks.isEmpty)
+            if (pendingTasks.isEmpty && completedTasks.isEmpty)
               const _EmptyTasksCard()
-            else
-              ..._tasks.map(
-                (task) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _TaskCard(
-                    task: task,
-                    onChanged: (value) => _toggleTask(task, value),
-                    onStart: () => _startFocus(task, profile.avatar),
+            else if (pendingTasks.isEmpty)
+              const _EmptyTasksCard(
+                title: '¡Todo el foco de hoy está hecho!',
+                message: 'Tu mascota celebra cada paso que has dado.',
+              ),
+            for (final task in visiblePendingTasks)
+              _buildTaskCard(task, profile.avatar),
+            if (pendingTasks.length > 3)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('toggle-extra-tasks'),
+                  onPressed: () {
+                    setState(() {
+                      _showAllPendingTasks = !_showAllPendingTasks;
+                    });
+                  },
+                  icon: Icon(
+                    _showAllPendingTasks
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                  ),
+                  label: Text(
+                    _showAllPendingTasks
+                        ? 'Mostrar solo las 3 principales'
+                        : 'Ver ${pendingTasks.length - 3} tareas más',
                   ),
                 ),
               ),
+            if (completedTasks.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('toggle-completed-tasks'),
+                  onPressed: () {
+                    setState(() {
+                      _showCompletedTasks = !_showCompletedTasks;
+                    });
+                  },
+                  icon: Icon(
+                    _showCompletedTasks
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                  ),
+                  label: Text(
+                    _showCompletedTasks
+                        ? 'Ocultar tareas completadas'
+                        : 'Ver completadas (${completedTasks.length})',
+                  ),
+                ),
+              ),
+              if (_showCompletedTasks)
+                for (final task in completedTasks)
+                  _buildTaskCard(task, profile.avatar),
+            ],
           ],
         ),
       ),
@@ -321,6 +682,15 @@ class _HomePageState extends State<HomePage>
       ),
     );
   }
+
+  Widget _buildTaskCard(FocusTask task, UserAvatar avatar) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: _TaskCard(
+      task: task,
+      onChanged: (value) => _toggleTask(task, value),
+      onStart: () => _startFocus(task, avatar),
+    ),
+  );
 }
 
 class WelcomeScreen extends StatefulWidget {
@@ -598,6 +968,70 @@ class _ProfileLoadingScreen extends StatelessWidget {
   }
 }
 
+class _ProgressLoadingScreen extends StatelessWidget {
+  const _ProgressLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: CircularProgressIndicator(
+            semanticsLabel: 'Cargando tus tareas y puntos',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProgressErrorScreen extends StatelessWidget {
+  const _ProgressErrorScreen({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  size: 44,
+                  color: Color(0xFF9A4E38),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No pudimos cargar tus tareas y puntos.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Comprueba el almacenamiento del dispositivo e inténtalo '
+                  'de nuevo.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: onRetry,
+                  child: const Text('Intentar de nuevo'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ProfileErrorScreen extends StatelessWidget {
   const _ProfileErrorScreen({required this.onRetry});
 
@@ -683,10 +1117,17 @@ class _PersonalGreeting extends StatelessWidget {
 }
 
 class FocusTask {
-  FocusTask({required this.id, required this.title});
+  FocusTask({
+    required this.id,
+    required this.title,
+    this.size = FocusTaskSize.standard,
+    this.isCompleted = false,
+    this.hasReceivedReward = false,
+  });
 
   final int id;
   final String title;
+  final FocusTaskSize size;
   bool isCompleted = false;
   bool hasReceivedReward = false;
 }
@@ -733,7 +1174,29 @@ class PetProgress {
   double get progress => pointsInLevel / pointsRequired;
 }
 
-enum _FocusSessionPhase { focusing, paused, microPause, completed }
+enum _FocusSessionPhase {
+  focusing,
+  paused,
+  microPause,
+  overtimeChoice,
+  overtimeCountdown,
+  freeMode,
+  completed,
+}
+
+class FocusSessionResult {
+  const FocusSessionResult({
+    required this.bonusRest,
+    required this.overtime,
+    required this.finishedEarly,
+    required this.finishedTooQuickly,
+  });
+
+  final Duration bonusRest;
+  final Duration overtime;
+  final bool finishedEarly;
+  final bool finishedTooQuickly;
+}
 
 class FocusSessionPage extends StatefulWidget {
   const FocusSessionPage({
@@ -741,16 +1204,21 @@ class FocusSessionPage extends StatefulWidget {
     required this.taskTitle,
     required this.avatar,
     required this.onRewardContinue,
-    this.focusDuration = const Duration(minutes: 25),
+    this.taskSize = FocusTaskSize.standard,
+    this.overtimeBlockDuration = const Duration(minutes: 5),
+    this.focusDuration,
     this.microPauseDuration = const Duration(minutes: 2),
-  }) : assert(focusDuration > Duration.zero),
-       assert(microPauseDuration > Duration.zero);
+  }) : assert(focusDuration == null || focusDuration > Duration.zero),
+       assert(microPauseDuration > Duration.zero),
+       assert(overtimeBlockDuration > Duration.zero);
 
   final String taskTitle;
   final UserAvatar avatar;
-  final VoidCallback onRewardContinue;
-  final Duration focusDuration;
+  final ValueChanged<FocusSessionResult> onRewardContinue;
+  final Duration? focusDuration;
+  final FocusTaskSize taskSize;
   final Duration microPauseDuration;
+  final Duration overtimeBlockDuration;
 
   @override
   State<FocusSessionPage> createState() => _FocusSessionPageState();
@@ -762,14 +1230,21 @@ class _FocusSessionPageState extends State<FocusSessionPage>
   DateTime? _backgroundedAt;
   late Duration _focusRemaining;
   late Duration _microPauseRemaining;
+  late Duration _overtimeRemaining;
+  Duration _overtimeElapsed = Duration.zero;
+  FocusSessionResult? _result;
   _FocusSessionPhase _phase = _FocusSessionPhase.focusing;
+
+  Duration get _focusDuration =>
+      widget.focusDuration ?? widget.taskSize.duration;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _focusRemaining = widget.focusDuration;
+    _focusRemaining = _focusDuration;
     _microPauseRemaining = widget.microPauseDuration;
+    _overtimeRemaining = widget.overtimeBlockDuration;
     _beginCountdown(_FocusSessionPhase.focusing, _focusRemaining);
   }
 
@@ -786,7 +1261,9 @@ class _FocusSessionPageState extends State<FocusSessionPage>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       if (_phase == _FocusSessionPhase.focusing ||
-          _phase == _FocusSessionPhase.microPause) {
+          _phase == _FocusSessionPhase.microPause ||
+          _phase == _FocusSessionPhase.overtimeCountdown ||
+          _phase == _FocusSessionPhase.freeMode) {
         _backgroundedAt ??= DateTime.now();
         _ticker?.cancel();
         _ticker = null;
@@ -799,44 +1276,57 @@ class _FocusSessionPageState extends State<FocusSessionPage>
   void _beginCountdown(_FocusSessionPhase phase, Duration duration) {
     _ticker?.cancel();
     _phase = phase;
-    if (phase == _FocusSessionPhase.focusing) {
-      _focusRemaining = duration;
-    } else {
-      _microPauseRemaining = duration;
+    switch (phase) {
+      case _FocusSessionPhase.focusing:
+        _focusRemaining = duration;
+      case _FocusSessionPhase.microPause:
+        _microPauseRemaining = duration;
+      case _FocusSessionPhase.overtimeCountdown:
+        _overtimeRemaining = duration;
+      case _FocusSessionPhase.paused:
+      case _FocusSessionPhase.overtimeChoice:
+      case _FocusSessionPhase.freeMode:
+      case _FocusSessionPhase.completed:
+        throw StateError('Cannot start a countdown for $phase.');
     }
-    _ticker = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => _refreshCountdown(),
-    );
+    _startTicker();
   }
 
   void _refreshCountdown() {
     if (!mounted) return;
-    final isMicroPause = _phase == _FocusSessionPhase.microPause;
-    final remaining = (isMicroPause ? _microPauseRemaining : _focusRemaining) -
-        const Duration(seconds: 1);
-    if (remaining <= Duration.zero) {
-      _ticker?.cancel();
-      _ticker = null;
-      if (isMicroPause) {
-        setState(() {
-          _microPauseRemaining = Duration.zero;
-        });
-        _beginCountdown(_FocusSessionPhase.focusing, _focusRemaining);
-      } else {
-        setState(() {
-          _focusRemaining = Duration.zero;
-          _phase = _FocusSessionPhase.completed;
-        });
-      }
-      return;
-    }
-
     setState(() {
-      if (isMicroPause) {
-        _microPauseRemaining = remaining;
-      } else {
-        _focusRemaining = remaining;
+      switch (_phase) {
+        case _FocusSessionPhase.focusing:
+          if (_focusRemaining <= const Duration(seconds: 1)) {
+            _focusRemaining = Duration.zero;
+            _phase = _FocusSessionPhase.overtimeChoice;
+            _stopTicker();
+          } else {
+            _focusRemaining -= const Duration(seconds: 1);
+          }
+        case _FocusSessionPhase.microPause:
+          if (_microPauseRemaining <= const Duration(seconds: 1)) {
+            _microPauseRemaining = Duration.zero;
+            _beginCountdown(_FocusSessionPhase.focusing, _focusRemaining);
+          } else {
+            _microPauseRemaining -= const Duration(seconds: 1);
+          }
+        case _FocusSessionPhase.overtimeCountdown:
+          _overtimeElapsed += const Duration(seconds: 1);
+          if (_overtimeRemaining <= const Duration(seconds: 1)) {
+            _overtimeRemaining = Duration.zero;
+            _phase = _FocusSessionPhase.overtimeChoice;
+            _stopTicker();
+          } else {
+            _overtimeRemaining -= const Duration(seconds: 1);
+          }
+        case _FocusSessionPhase.freeMode:
+          _overtimeElapsed += const Duration(seconds: 1);
+          break;
+        case _FocusSessionPhase.paused:
+        case _FocusSessionPhase.overtimeChoice:
+        case _FocusSessionPhase.completed:
+          _stopTicker();
       }
     });
   }
@@ -845,54 +1335,114 @@ class _FocusSessionPageState extends State<FocusSessionPage>
     final backgroundedAt = _backgroundedAt;
     if (backgroundedAt == null) return;
     _backgroundedAt = null;
-    if (_phase == _FocusSessionPhase.paused ||
-        _phase == _FocusSessionPhase.completed) {
-      return;
-    }
-
     var elapsed = DateTime.now().difference(backgroundedAt);
     if (elapsed < Duration.zero) elapsed = Duration.zero;
-    if (_phase == _FocusSessionPhase.microPause) {
-      if (elapsed >= _microPauseRemaining) {
-        elapsed -= _microPauseRemaining;
-        _microPauseRemaining = Duration.zero;
-        _phase = _FocusSessionPhase.focusing;
-      } else {
-        _microPauseRemaining -= elapsed;
-      }
-    }
-
-    if (_phase == _FocusSessionPhase.focusing) {
-      if (elapsed >= _focusRemaining) {
-        _ticker?.cancel();
-        _ticker = null;
-        setState(() {
-          _focusRemaining = Duration.zero;
-          _phase = _FocusSessionPhase.completed;
-        });
-        return;
-      }
-      _focusRemaining -= elapsed;
-    }
-
     setState(() {
-      _beginCountdown(_phase, _remainingFor(_phase));
+      switch (_phase) {
+        case _FocusSessionPhase.focusing:
+          _focusRemaining = _subtractElapsed(_focusRemaining, elapsed);
+          if (_focusRemaining == Duration.zero) {
+            _phase = _FocusSessionPhase.overtimeChoice;
+          }
+        case _FocusSessionPhase.microPause:
+          if (elapsed >= _microPauseRemaining) {
+            elapsed -= _microPauseRemaining;
+            _microPauseRemaining = Duration.zero;
+            _phase = _FocusSessionPhase.focusing;
+            _focusRemaining = _subtractElapsed(_focusRemaining, elapsed);
+            if (_focusRemaining == Duration.zero) {
+              _phase = _FocusSessionPhase.overtimeChoice;
+            }
+          } else {
+            _microPauseRemaining -= elapsed;
+          }
+        case _FocusSessionPhase.overtimeCountdown:
+          final overtimeElapsed = elapsed > _overtimeRemaining
+              ? _overtimeRemaining
+              : elapsed;
+          _overtimeElapsed += overtimeElapsed;
+          _overtimeRemaining = _subtractElapsed(_overtimeRemaining, elapsed);
+          if (_overtimeRemaining == Duration.zero) {
+            _phase = _FocusSessionPhase.overtimeChoice;
+          }
+        case _FocusSessionPhase.freeMode:
+          _overtimeElapsed += elapsed;
+          break;
+        case _FocusSessionPhase.paused:
+        case _FocusSessionPhase.overtimeChoice:
+        case _FocusSessionPhase.completed:
+          return;
+      }
+
+      if (_phase == _FocusSessionPhase.focusing ||
+          _phase == _FocusSessionPhase.microPause ||
+          _phase == _FocusSessionPhase.overtimeCountdown ||
+          _phase == _FocusSessionPhase.freeMode) {
+        _startTicker();
+      }
     });
   }
 
-  Duration _remainingFor(_FocusSessionPhase phase) =>
-      phase == _FocusSessionPhase.microPause
-      ? _microPauseRemaining
-      : _focusRemaining;
+  Duration _subtractElapsed(Duration remaining, Duration elapsed) =>
+      elapsed >= remaining ? Duration.zero : remaining - elapsed;
 
-  void _pauseFocus() {
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _refreshCountdown(),
+    );
+  }
+
+  void _stopTicker() {
     _ticker?.cancel();
     _ticker = null;
+  }
+
+  void _pauseFocus() {
+    _stopTicker();
     _phase = _FocusSessionPhase.paused;
   }
 
   void _startMicroPause() {
     _beginCountdown(_FocusSessionPhase.microPause, widget.microPauseDuration);
+  }
+
+  void _startOvertimeBlock() {
+    _beginCountdown(
+      _FocusSessionPhase.overtimeCountdown,
+      widget.overtimeBlockDuration,
+    );
+  }
+
+  void _startFreeMode() {
+    _phase = _FocusSessionPhase.freeMode;
+    _startTicker();
+  }
+
+  void _finishTask() {
+    final finishedEarly =
+        _phase == _FocusSessionPhase.focusing ||
+        _phase == _FocusSessionPhase.paused;
+    final finishedTooQuickly =
+        finishedEarly &&
+        _focusRemaining.inMicroseconds * 2 > _focusDuration.inMicroseconds;
+    final remainingRest = finishedEarly && !finishedTooQuickly
+        ? _focusRemaining
+        : Duration.zero;
+    final bonusRest = remainingRest > widget.taskSize.maxRestBonus
+        ? widget.taskSize.maxRestBonus
+        : remainingRest;
+    _stopTicker();
+    setState(() {
+      _result = FocusSessionResult(
+        bonusRest: bonusRest,
+        overtime: _overtimeElapsed,
+        finishedEarly: finishedEarly,
+        finishedTooQuickly: finishedTooQuickly,
+      );
+      _phase = _FocusSessionPhase.completed;
+    });
   }
 
   Future<void> _confirmAbandon() async {
@@ -930,20 +1480,44 @@ class _FocusSessionPageState extends State<FocusSessionPage>
     return 'Quedan $minutes minutos y $seconds segundos';
   }
 
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    if (minutes == 0) return '$seconds s';
+    if (seconds == 0) return '$minutes min';
+    return '$minutes min $seconds s';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_phase == _FocusSessionPhase.completed) return _buildReward(context);
 
     final isMicroPause = _phase == _FocusSessionPhase.microPause;
     final isPaused = _phase == _FocusSessionPhase.paused;
-    final remaining = isMicroPause ? _microPauseRemaining : _focusRemaining;
+    final isOvertimeChoice = _phase == _FocusSessionPhase.overtimeChoice;
+    final isOvertimeCountdown = _phase == _FocusSessionPhase.overtimeCountdown;
+    final isFreeMode = _phase == _FocusSessionPhase.freeMode;
+    final isZen = isOvertimeChoice || isFreeMode;
+    final remaining = isMicroPause
+        ? _microPauseRemaining
+        : isOvertimeCountdown
+        ? _overtimeRemaining
+        : _focusRemaining;
     final total = isMicroPause
         ? widget.microPauseDuration
-        : widget.focusDuration;
+        : isOvertimeCountdown
+        ? widget.overtimeBlockDuration
+        : _focusDuration;
     final progress = (remaining.inMilliseconds / total.inMilliseconds)
         .clamp(0.0, 1.0)
         .toDouble();
-    final phaseLabel = isMicroPause
+    final phaseLabel = isOvertimeChoice
+        ? 'El bloque de foco ha terminado. Elige cómo continuar.'
+        : isFreeMode
+        ? 'Modo libre. Tiempo extra: ${_formatDuration(_overtimeElapsed)}.'
+        : isOvertimeCountdown
+        ? 'Prórroga. ${_spokenTime(remaining)}.'
+        : isMicroPause
         ? 'Micro-pausa. ${_spokenTime(remaining)}.'
         : isPaused
         ? 'Foco en pausa. ${_spokenTime(remaining)}.'
@@ -963,75 +1537,172 @@ class _FocusSessionPageState extends State<FocusSessionPage>
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
           children: [
             Text(
-              isMicroPause
+              isOvertimeChoice
+                  ? 'Sigue a tu ritmo'
+                  : isFreeMode
+                  ? 'Modo libre'
+                  : isOvertimeCountdown
+                  ? 'Cinco minutos más'
+                  : isMicroPause
                   ? 'Tómate un respiro'
                   : isPaused
                   ? 'Tu foco está en pausa'
                   : 'Te acompaño en esta tarea',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
               widget.taskTitle,
               key: const Key('focus-task-title'),
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: const Color(0xFF52685B),
-              ),
+              style: Theme.of(context).textTheme.bodyLarge
+                  ?.copyWith(color: const Color(0xFF52685B)),
             ),
             const SizedBox(height: 24),
-            Semantics(
-              label: phaseLabel,
-              child: ExcludeSemantics(
-                child: SizedBox(
-                  height: 224,
-                  width: 224,
-                  child: Stack(
-                    alignment: Alignment.center,
+            if (isZen)
+              Semantics(
+                label: phaseLabel,
+                child: Container(
+                  key: const Key('focus-zen-state'),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5F1E9),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: Column(
                     children: [
-                      SizedBox(
-                        height: 210,
-                        width: 210,
-                        child: CircularProgressIndicator(
-                          key: const Key('focus-timer-progress'),
-                          value: progress,
-                          strokeWidth: 17,
-                          backgroundColor: const Color(0xFFDCE8DF),
-                          color: isMicroPause
-                              ? const Color(0xFFE9A72B)
-                              : const Color(0xFF28644F),
-                          strokeCap: StrokeCap.round,
-                        ),
-                      ),
                       Text(
                         widget.avatar.emoji,
-                        key: const Key('focus-pet-avatar'),
-                        style: const TextStyle(fontSize: 78),
+                        key: const Key('focus-pet-zen-avatar'),
+                        style: const TextStyle(fontSize: 88),
                       ),
+                      if (isFreeMode) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Tiempo extra · ${_formatDuration(_overtimeElapsed)}',
+                          key: const Key('focus-overtime-elapsed'),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: const Color(0xFF52685B)),
+                        ),
+                      ],
                     ],
                   ),
                 ),
+              )
+            else
+              Semantics(
+                label: phaseLabel,
+                child: ExcludeSemantics(
+                  child: SizedBox(
+                    height: 224,
+                    width: 224,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          height: 210,
+                          width: 210,
+                          child: CircularProgressIndicator(
+                            key: const Key('focus-timer-progress'),
+                            value: progress,
+                            strokeWidth: 17,
+                            backgroundColor: const Color(0xFFDCE8DF),
+                            color: isMicroPause
+                                ? const Color(0xFFE9A72B)
+                                : isOvertimeCountdown
+                                ? const Color(0xFFE9A72B)
+                                : const Color(0xFF28644F),
+                            strokeCap: StrokeCap.round,
+                          ),
+                        ),
+                        Text(
+                          widget.avatar.emoji,
+                          key: const Key('focus-pet-avatar'),
+                          style: const TextStyle(fontSize: 78),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
             const SizedBox(height: 18),
             Text(
-              isMicroPause
+              isOvertimeChoice
+                  ? '${widget.avatar.petName} te anima a seguir. '
+                        '¿Qué necesitas ahora?'
+                  : isFreeMode
+                  ? 'Sin prisa y sin cuenta atrás. Pulsa cuando termines.'
+                  : isOvertimeCountdown
+                  ? 'Tu mascota sigue contigo. Puedes terminar cuando quieras.'
+                  : isMicroPause
                   ? 'Estira los brazos y bebe un poco de agua. '
                         'Volveremos al foco automáticamente.'
                   : isPaused
                   ? 'El tiempo está detenido. Cuando quieras, seguimos.'
                   : 'Un paso cada vez. Tu mascota sigue aquí contigo.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFF52685B),
-                height: 1.4,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: const Color(0xFF52685B), height: 1.4),
             ),
             const SizedBox(height: 28),
-            if (_phase == _FocusSessionPhase.focusing) ...[
+            if (isOvertimeChoice) ...[
+              FilledButton.icon(
+                key: const Key('focus-overtime-five-more-button'),
+                onPressed: () => setState(_startOvertimeBlock),
+                icon: const Icon(Icons.add_alarm_rounded),
+                label: const Text('Necesito 5 minutos más'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const Key('focus-overtime-free-mode-button'),
+                onPressed: () => setState(_startFreeMode),
+                icon: const Icon(Icons.self_improvement_rounded),
+                label: const Text('Seguir en modo libre'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+              ),
+              const SizedBox(height: 10),
+              FilledButton(
+                key: const Key('focus-finish-task-button'),
+                onPressed: _finishTask,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+                child: const Text('Finalizar tarea'),
+              ),
+            ] else if (isOvertimeCountdown || isFreeMode) ...[
+              FilledButton(
+                key: const Key('focus-finish-task-button'),
+                onPressed: _finishTask,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                ),
+                child: const Text('Finalizar tarea'),
+              ),
+              if (isOvertimeCountdown) ...[
+                const SizedBox(height: 10),
+                TextButton(
+                  key: const Key('focus-overtime-free-mode-button'),
+                  onPressed: () => setState(_startFreeMode),
+                  child: const Text('Seguir en modo libre'),
+                ),
+              ],
+            ] else if (_phase == _FocusSessionPhase.focusing) ...[
+              FilledButton(
+                key: const Key('focus-finish-early-button'),
+                onPressed: _finishTask,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                ),
+                child: const Text('¡Terminé antes!'),
+              ),
+              const SizedBox(height: 10),
               FilledButton.icon(
                 key: const Key('focus-pause-button'),
                 onPressed: () => setState(_pauseFocus),
@@ -1052,19 +1723,32 @@ class _FocusSessionPageState extends State<FocusSessionPage>
                 ),
               ),
             ] else if (isPaused)
-              FilledButton.icon(
-                key: const Key('focus-resume-button'),
-                onPressed: () => setState(
-                  () => _beginCountdown(
-                    _FocusSessionPhase.focusing,
-                    _focusRemaining,
+              Column(
+                children: [
+                  FilledButton(
+                    key: const Key('focus-finish-early-button'),
+                    onPressed: _finishTask,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                    ),
+                    child: const Text('¡Terminé antes!'),
                   ),
-                ),
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: const Text('Reanudar foco'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(56),
-                ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    key: const Key('focus-resume-button'),
+                    onPressed: () => setState(
+                      () => _beginCountdown(
+                        _FocusSessionPhase.focusing,
+                        _focusRemaining,
+                      ),
+                    ),
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Reanudar foco'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                    ),
+                  ),
+                ],
               ),
             const SizedBox(height: 10),
             TextButton.icon(
@@ -1080,6 +1764,7 @@ class _FocusSessionPageState extends State<FocusSessionPage>
   }
 
   Widget _buildReward(BuildContext context) {
+    final result = _result!;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -1099,19 +1784,29 @@ class _FocusSessionPageState extends State<FocusSessionPage>
                 Text(
                   '¡Conseguido!',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: Theme.of(context).textTheme.headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Has completado «${widget.taskTitle}»',
+                  result.finishedEarly
+                      ? result.finishedTooQuickly
+                            ? '¡Vaya, qué rápido! ${widget.avatar.petName} '
+                                  'celebra que hayas terminado. Esta vez tu '
+                                  'descanso será el estándar, sin minutos extra.'
+                            : '¡Guau! Tu cerebro ha volado hoy. '
+                                  '${widget.avatar.petName} celebra tu rapidez.'
+                      : result.overtime > Duration.zero
+                      ? '${widget.avatar.petName} está orgulloso de tu '
+                            'perseverancia. Has completado «${widget.taskTitle}».'
+                      : 'Has completado «${widget.taskTitle}». '
+                            '${widget.avatar.petName} celebra contigo.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '+15 puntos de energía para tu mascota',
+                  '+${widget.taskSize.points} puntos de energía para tu mascota',
                   key: const Key('focus-reward-points'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -1119,11 +1814,55 @@ class _FocusSessionPageState extends State<FocusSessionPage>
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+                if (result.bonusRest > Duration.zero) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Tiempo de Bonificación para Descanso: '
+                    '+${_formatDuration(result.bonusRest)}',
+                    key: const Key('focus-bonus-rest-reward'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: const Color(0xFF52685B)),
+                  ),
+                ],
+                if (result.finishedTooQuickly) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'El descanso será el estándar, sin bonificación adicional.',
+                    key: const Key('focus-standard-rest-message'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: const Color(0xFF52685B)),
+                  ),
+                ],
+                if (result.overtime > Duration.zero) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Tiempo extra realizado: ${_formatDuration(result.overtime)}',
+                    key: const Key('focus-overtime-total-reward'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: const Color(0xFF52685B)),
+                  ),
+                ],
+                if (result.overtime > const Duration(minutes: 10)) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    '🍪 ¡Snack para ${widget.avatar.petName} por tu '
+                    'perseverancia!',
+                    key: const Key('focus-perseverance-snack-reward'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: const Color(0xFF805915),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 28),
                 FilledButton(
                   key: const Key('focus-reward-continue-button'),
                   onPressed: () {
-                    widget.onRewardContinue();
+                    widget.onRewardContinue(result);
                     Navigator.of(context).pop();
                   },
                   style: FilledButton.styleFrom(
@@ -1176,11 +1915,15 @@ class _PetCard extends StatelessWidget {
     required this.earnedPoints,
     required this.levelUpAnimation,
     required this.avatar,
+    required this.bonusRest,
+    required this.perseveranceSnacks,
   });
 
   final int earnedPoints;
   final Animation<double> levelUpAnimation;
   final UserAvatar avatar;
+  final Duration bonusRest;
+  final int perseveranceSnacks;
 
   @override
   Widget build(BuildContext context) {
@@ -1295,6 +2038,25 @@ class _PetCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelSmall
                       ?.copyWith(color: const Color(0xFF52685B)),
                 ),
+                if (bonusRest > Duration.zero || perseveranceSnacks > 0) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      if (bonusRest > Duration.zero)
+                        _PetRewardBadge(
+                          key: const Key('pet-bonus-rest-badge'),
+                          label: 'Descanso +${_formatDuration(bonusRest)}',
+                        ),
+                      if (perseveranceSnacks > 0)
+                        _PetRewardBadge(
+                          key: const Key('pet-snacks-badge'),
+                          label: '🍪 $perseveranceSnacks',
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -1305,6 +2067,38 @@ class _PetCard extends StatelessWidget {
             avatar: avatar,
           ),
         ],
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    if (minutes == 0) return '$seconds s';
+    if (seconds == 0) return '$minutes min';
+    return '$minutes min $seconds s';
+  }
+}
+
+class _PetRewardBadge extends StatelessWidget {
+  const _PetRewardBadge({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: const Color(0xFF355544),
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -1430,7 +2224,13 @@ class _PetAvatar extends StatelessWidget {
 }
 
 class _EmptyTasksCard extends StatelessWidget {
-  const _EmptyTasksCard();
+  const _EmptyTasksCard({
+    this.title = 'Empezamos con calma',
+    this.message = 'Añade una tarea y la tendrás a la vista.',
+  });
+
+  final String title;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -1455,13 +2255,13 @@ class _EmptyTasksCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Empezamos con calma',
+            title,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
-            'Añade una tarea y la tendrás a la vista.',
+            message,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium
                 ?.copyWith(color: const Color(0xFF64756D)),
@@ -1519,6 +2319,11 @@ class _TaskCard extends StatelessWidget {
             decoration: task.isCompleted ? TextDecoration.lineThrough : null,
           ),
         ),
+        subtitle: Text(
+          '${task.size.label} · ${task.size.minutes} min · '
+          '+${task.size.points} pts',
+          style: const TextStyle(color: Color(0xFF64756D)),
+        ),
         activeColor: const Color(0xFF28644F),
         shape: shape,
       ),
@@ -1542,6 +2347,60 @@ abstract interface class TaskSpeechRecognizer {
   Future<void> stop();
 
   Future<void> cancel();
+}
+
+class _TaskSizeButton extends StatelessWidget {
+  const _TaskSizeButton({
+    required this.size,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final FocusTaskSize size;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    selected: selected,
+    label: '${size.label}, ${size.minutes} minutos, ${size.points} puntos',
+    child: OutlinedButton(
+      key: Key('task-size-${size.name}'),
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: selected ? const Color(0xFFE5F1E9) : Colors.white,
+        foregroundColor: const Color(0xFF28644F),
+        side: BorderSide(
+          color: selected ? const Color(0xFF28644F) : const Color(0xFFDCE4DC),
+          width: selected ? 1.5 : 1,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            size.label,
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(color: const Color(0xFF52685B), fontSize: 9),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            '${size.minutes} min',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          Text(
+            '+${size.points} pts',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _DeviceTaskSpeechRecognizer implements TaskSpeechRecognizer {
@@ -1621,6 +2480,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
   String? _voiceMessage;
   bool _isStartingVoice = false;
   bool _isListening = false;
+  FocusTaskSize _selectedSize = FocusTaskSize.standard;
 
   @override
   void dispose() {
@@ -1640,7 +2500,8 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
       return;
     }
 
-    Navigator.of(context).pop(title);
+    Navigator.of(context)
+        .pop(FocusTaskDraft(title: title, size: _selectedSize));
   }
 
   Future<void> _toggleVoiceInput() async {
@@ -1793,139 +2654,171 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD3DCD5),
-                    borderRadius: BorderRadius.circular(4),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD3DCD5),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 22),
-              Text(
-                '¿Qué tienes en mente?',
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Anótalo aquí. Lo demás puede esperar.',
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: const Color(0xFF64756D)),
-              ),
-              const SizedBox(height: 18),
-              TextField(
-                key: const Key('task-title-field'),
-                controller: _controller,
-                autofocus: true,
-                textCapitalization: TextCapitalization.sentences,
-                textInputAction: TextInputAction.done,
-                maxLength: 100,
-                onSubmitted: (_) => _submit(),
-                onChanged: (_) {
-                  if (_errorText != null) {
-                    setState(() {
-                      _errorText = null;
-                    });
-                  }
-                },
-                decoration: InputDecoration(
-                  hintText: 'Por ejemplo: preparar el desayuno',
-                  errorText: _errorText,
-                  counterText: '',
-                  suffixIcon: IconButton(
-                    key: const Key('voice-input-button'),
-                    tooltip: _isListening ? 'Detener dictado' : 'Dictar tarea',
-                    onPressed: _isStartingVoice ? null : _toggleVoiceInput,
-                    icon: _isStartingVoice
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            _isListening
-                                ? Icons.stop_circle_rounded
-                                : Icons.mic_rounded,
+                const SizedBox(height: 22),
+                Text(
+                  '¿Qué tienes en mente?',
+                  style: Theme.of(context).textTheme.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Anótalo aquí. Lo demás puede esperar.',
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: const Color(0xFF64756D)),
+                ),
+                const SizedBox(height: 18),
+                TextField(
+                  key: const Key('task-title-field'),
+                  controller: _controller,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.done,
+                  maxLength: 100,
+                  onSubmitted: (_) => _submit(),
+                  onChanged: (_) {
+                    if (_errorText != null) {
+                      setState(() {
+                        _errorText = null;
+                      });
+                    }
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Por ejemplo: preparar el desayuno',
+                    errorText: _errorText,
+                    counterText: '',
+                    suffixIcon: IconButton(
+                      key: const Key('voice-input-button'),
+                      tooltip: _isListening
+                          ? 'Detener dictado'
+                          : 'Dictar tarea',
+                      onPressed: _isStartingVoice ? null : _toggleVoiceInput,
+                      icon: _isStartingVoice
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              _isListening
+                                  ? Icons.stop_circle_rounded
+                                  : Icons.mic_rounded,
+                            ),
+                      style: IconButton.styleFrom(
+                        foregroundColor: _isListening
+                            ? const Color(0xFFB34343)
+                            : const Color(0xFF28644F),
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF28644F),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '¿Cuánto tiempo crees que necesitas?',
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (final size in FocusTaskSize.values)
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            right: size == FocusTaskSize.long ? 0 : 8,
                           ),
-                    style: IconButton.styleFrom(
-                      foregroundColor: _isListening
-                          ? const Color(0xFFB34343)
-                          : const Color(0xFF28644F),
-                    ),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF28644F),
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-              ),
-              if (_voiceMessage case final voiceMessage?) ...[
-                const SizedBox(height: 8),
-                Semantics(
-                  liveRegion: true,
-                  child: Text(
-                    voiceMessage,
-                    key: const Key('voice-status-message'),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: _isListening
-                          ? const Color(0xFF28644F)
-                          : const Color(0xFF64756D),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          child: _TaskSizeButton(
+                            size: size,
+                            selected: _selectedSize == size,
+                            onPressed: () {
+                              setState(() {
+                                _selectedSize = size;
+                              });
+                            },
+                          ),
                         ),
                       ),
-                      child: const Text('Ahora no'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      key: const Key('save-task-button'),
-                      onPressed: _submit,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                  ],
+                ),
+                if (_voiceMessage case final voiceMessage?) ...[
+                  const SizedBox(height: 8),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      voiceMessage,
+                      key: const Key('voice-status-message'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _isListening
+                            ? const Color(0xFF28644F)
+                            : const Color(0xFF64756D),
                       ),
-                      child: const Text('Guardar'),
                     ),
                   ),
                 ],
-              ),
-            ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text('Ahora no'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        key: const Key('save-task-button'),
+                        onPressed: _submit,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text('Guardar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

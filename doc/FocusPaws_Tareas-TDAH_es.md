@@ -56,7 +56,7 @@ Para que el sistema de la mascota funcione y sea sostenible para ti a nivel de d
 	• Suena un efecto de sonido satisfactorio ("¡Pop!" / "¡Chinchín!").
 	• La pantalla lanza confeti digital parpadeante.
 	• El huevo recibe "puntos de enfoque" hasta que eclosiona en una pequeña criatura.
-• Progresión por niveles: Cada tarea completada otorga 15 puntos. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180 cada uno; y los niveles 6 a 8, 210 cada uno. El requisito aumenta 30 puntos cada tres niveles. La insignia del animal elegido muestra el nivel actual, celebra cada subida y la barra muestra el avance y objetivo del siguiente nivel. Los puntos totales se mantienen visibles para que el progreso anterior nunca parezca perdido.
+• Progresión por niveles: Cada tarea otorga puntos según su tamaño: 5, 15 o 30. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180 cada uno; y los niveles 6 a 8, 210 cada uno. El requisito aumenta 30 puntos cada tres niveles. La insignia del animal elegido muestra el nivel actual, celebra cada subida y la barra muestra el avance y objetivo del siguiente nivel. Los puntos totales se mantienen visibles para que el progreso anterior nunca parezca perdido.
 • Personalización inicial: En el primer inicio, la persona elige su nombre y uno de cinco animales. El saludo de la pantalla principal muestra solo su nombre; el animal seleccionado aparece en el recuadro de progreso y es quien celebra las subidas de nivel. Los animales se llaman Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo) y Bruno (oso).
 
 -------------------
@@ -84,7 +84,7 @@ Estructura de la Pantalla (De arriba a abajo):
 Cuando el temporizador visual llega a cero, el usuario entra en la fase de subidón de dopamina sano:
 • La pantalla se llena de una animación festiva (confeti digital o huellas parpadeantes).
 • La mascota salta de alegría y ladra o celebra con un sonido muy satisfactorio.
-• Aparece un mensaje gigante: "¡Conseguido! Has ganado +15 puntos de energía para tu mascota".
+• Aparece un mensaje gigante con la recompensa del tamaño elegido: "¡Conseguido! Has ganado +5, +15 o +30 puntos de energía para tu mascota".
 
 ------------------------------
 
@@ -125,7 +125,7 @@ text
 │                                                        │
 │ 🎉 Animación de Confeti / Sonido "¡Pop!"               │
 │ 🐕 Mascota saltando de alegría                         │
-│ 💎 +15 Puntos otorgados a la mascota                   │
+│ 💎 Puntos según el tamaño de la tarea (5/15/30)         │
 └───────────────────────────┬────────────────────────────┘
                             │
                (Toca el botón "Continuar")
@@ -148,13 +148,90 @@ Bloque 1: Configuración del Proyecto y Base de Datos (Backend)
 Bloque 2: Desarrollo de la Interfaz Visual (Frontend)
 
 • Tarea 2.1: Diseñar la Pantalla Principal. Coloca un marcador de posición para la mascota, un botón grande para añadir tareas y un listado dinámico que lea las tareas de la base de datos.
-• Tarea 2.2: Programar la lógica del botón Añadir Tarea. Al tocarlo, debe abrir un campo de texto simple con la opción de dictar en español. La transcripción se puede revisar y editar antes de guardar. Al guardar, añade el registro a la base de datos y refresca la pantalla al instante.
-• Tarea 2.3: Diseñar la Pantalla de Modo Foco. Crea un componente de reloj circular animado (puedes usar librerías como percent_indicator en Flutter) que reciba un tiempo fijo (por ejemplo, 25 minutos) y vaya reduciendo el círculo cromático uniformemente.
+• Tarea 2.2: Programar la lógica del botón Añadir Tarea. Al tocarlo, debe abrir un campo de texto simple con la opción de dictar en español. La transcripción se puede revisar y editar antes de guardar. Ofrece tres tamaños rápidos: Paso corto (15 min), Bloque estándar (30 min) y Gran esfuerzo (45 min). Al guardar, añade el título y el tiempo estimado a la base de datos y refresca la pantalla al instante.
+• Tarea 2.3: Diseñar la Pantalla de Modo Foco. Crea un componente de reloj circular animado (puedes usar librerías como percent_indicator en Flutter) que tome la estimación de la tarea (15, 30 o 45 minutos) y vaya reduciendo el círculo cromático uniformemente.
 
 Bloque 3: Lógica de Gamificación y Recompensa
 
-• Tarea 3.1: Crear la lógica de Final de Temporizador. Cuando el círculo se vacíe, debe activar un cambio de pantalla automático hacia la pantalla de éxito.
-• Tarea 3.2: Implementar la Pantalla de Recompensa. Añade un activador de sonido satisfactorio (un archivo de audio corto tipo .mp3) y suma +15 puntos a la variable de la mascota en la base de datos al pulsar "Continuar".
+• Tarea 3.1: Crear la lógica de Final de Temporizador. Cuando el círculo se vacíe, permite añadir una prórroga visual de 5 minutos, pasar al modo libre ascendente o finalizar la tarea.
+• Tarea 3.2: Implementar la Pantalla de Recompensa. Añade un activador de sonido satisfactorio (un archivo de audio corto tipo .mp3) y concede los puntos asociados al tamaño de la tarea (5, 15 o 30) al pulsar "Continuar".
+
+-------------------------------------
+
+## Funcionamiento modo foco desarrollado
+
+En FocusPaws, el Modo Foco debe ser flexible y adaptarse a lo que llamamos "ventanas de productividad variable".
+Aquí tienes la lógica exacta de cómo debe reaccionar la aplicación en ambos escenarios:
+
+Escenario 1: El usuario finaliza la tarea ANTES de que se acabe el tiempo ⏱️🏃‍♂️
+
+Imagina que la tarea es un Bloque estándar de 30 minutos y el usuario la termina después de 15 minutos de foco.
+• El error común en otras apps: Obligar al usuario a esperar a que el reloj llegue a cero o no darle los puntos completos por "cancelar" el temporizador. Esto genera frustración.
+• Cómo debe funcionar en FocusPaws: Habilitamos un botón visible que dice "¡Terminé antes!".
+• La lógica de la recompensa:
+	• ¡Premio por eficiencia! Se otorgan a la mascota los puntos completos del tamaño elegido: +5, +15 o +30.
+	• La app lo celebra con un mensaje de refuerzo positivo adaptado: "¡Guau! Tu cerebro ha volado hoy. [Nombre de la mascota] está orgulloso de tu velocidad".
+	• El tiempo restante del temporizador se convierte automáticamente en "Tiempo de Bonificación para Descanso" (se suma a su próximo descanso para que pueda relajarse sin culpa).
+
+Escenario 2: El usuario finaliza la tarea DESPUÉS (El tiempo llega a cero y no ha terminado) ⏳🔄
+
+El temporizador elegido para la tarea llega a cero, pero el usuario todavía está a mitad de la tarea.
+• El error común en otras apps: Cortar la concentración del usuario con una alarma estridente y obligarle a registrar la tarea como "fallida" o iniciar un descanso obligatorio, rompiendo su estado de flujo.
+• Cómo debe funcionar en FocusPaws (El "Modo Horas Extras"): Cuando el tiempo llega a cero, el círculo visual desaparece y la app entra en un estado "Zen" secundario. La mascota cambia su animación a una posición de ánimo (como pompones o aplausos silenciosos) y aparece un menú con dos opciones sencillas:
+	1. "Necesito 5 minutos más": Añade un pequeño minitemporizador visual extra de inmediato sin salir de la pantalla.
+	2. "Seguir en modo libre": El reloj empieza a contar hacia adelante (en positivo) registrando cuánto tiempo extra necesita, de forma muy discreta.
+• La lógica de la recompensa:
+	• Cuando el usuario por fin pulsa "Finalizar tarea", recibe los puntos base de su tarea (+5, +15 o +30) por haber sido perseverante y no abandonar.
+	• Extra por esfuerzo: Si completó más de 10 minutos extra, la mascota recibe un "snack" o un objeto cosmético coleccionable como recompensa por su resistencia.
+
+🎨 Resumen visual para el flujo de programación
+
+Para tu código o estructura en FlutterFlow, la lógica de la pantalla del Temporizador se divide en estas tres salidas:
+
+Acción del Usuario	Estado del Reloj	Destino	Recompensa en FocusPaws
+Toca "¡Terminé antes!"	Detenido manualmente	Pantalla Recompensa	Puntos del tamaño + posible tiempo restante transferido al descanso.
+Tiempo Agotado (Y ya terminó)	Llega a 00:00	Pantalla Recompensa	Puntos del tamaño.
+Tiempo Agotado (Y NO ha terminado)	Llega a 00:00	Prórroga / Modo Libre	Puntos del tamaño al acabar + bonificación por persistencia.
+
+-------------------------------------
+
+## Tiempo definido por tarea
+
+1. Estimación en un Toque (Sin escribir números)
+
+Cuando el usuario crea una tarea, no le obligues a escribir la hora exacta (eso causa fricción). En su lugar, ofrécele 3 botones rápidos de "Tamaño de Tarea":
+• Paso Corto (15 min): Para cosas rápidas (ej. Hacer la cama, mandar un correo).
+• Bloque Estándar (30 min): Para tareas normales (ej. Estudiar un tema, limpiar la habitación).
+• Gran Esfuerzo (45 min): Para tareas complejas que requieren mucho foco.
+(Nota de diseño para TDAH: No pongas opciones de más de 45 o 60 minutos. Es mejor educar al usuario a dividir las tareas grandes en subtareas pequeñas para evitar que se rinda antes de empezar).
+
+2. La Regla del "Límite Antitrampas" (Lógica del código)
+
+Para evitar el abuso del botón "¡Terminé antes!", añadiremos una regla matemática muy sencilla en el código de tu aplicación:
+• La Regla del 50%: Si el usuario pulsa "¡Terminé antes!" habiendo cumplido menos de la mitad del tiempo estimado, la aplicación sospechará que es un "falso positivo" (o que calculó muy mal).
+• Cómo reacciona la app: No le da la bonificación completa de tiempo para el descanso. En su lugar, la mascota le dice de forma amigable: "¡Vaya, qué rápido! Vamos a guardar estos minutos extra en tu hucha, pero tu descanso será el estándar para no perder el ritmo".
+
+📊 Tabla de Recompensas Equilibrada
+
+Definiendo el tiempo estimado de la tarea, tu base de datos y la lógica de recompensas quedarían perfectamente equilibradas así:
+
+Tamaño de Tarea	Tiempo Estimado	Puntos Base para la Mascota	Bonificación Máxima de Descanso
+Paso Corto	15 minutos	+5 pts	Máximo 3 minutos extra
+Bloque Estándar	30 minutos	+15 pts	Máximo 7 minutos extra
+Gran Esfuerzo	45 minutos	+30 pts	Máximo 10 minutos extra
+
+
+🛠️ Impacto en tus Tareas Técnicas
+
+Esto solo añade una pequeña tarea a tu plan de trabajo: en la Tarea 2.2 (Ventana emergente de añadir tarea), además del campo de texto, pondremos estos 3 botones de tiempo predefinido (15, 30, 45 min). Al guardar la tarea, se guardará también ese límite en la base de datos.
+Con esta solución el sistema queda blindado contra las trampas del cerebro
+
+### Decisiones acordadas para esta implementación
+
+- La tabla de recompensas por tamaño sustituye a la recompensa fija anterior y se aplica tanto al completar desde Inicio como al terminar una sesión de foco, incluso después de una prórroga o en modo libre.
+- Si se pulsa «¡Terminé antes!» antes de consumir la mitad del tiempo estimado, no se suman los minutos restantes al saldo de descanso. Se mantiene el descanso estándar y se muestra un mensaje amable.
+- Si se ha completado al menos la mitad, el tiempo restante se suma al saldo de descanso hasta el máximo indicado para el tamaño. El excedente no se acumula en otra hucha.
+- Las tareas guardadas antes de definir tamaños se consideran Bloque estándar (30 minutos y 15 puntos).
 
 -------------------------------------
 
