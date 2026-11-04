@@ -11,7 +11,7 @@ Las aplicaciones de productividad del mercado (tipo Notion o Todoist) fallan con
 🧩 Las 3 Funciones Imprescindibles (Tu MVP)
 
 Para no saturar al usuario (lo que provocaría que borre la app), el prototipo inicial debe centrarse en tres herramientas visuales:
-• Captura en 1 Toque (Cero fricción): Apuntar una tarea debe requerir un solo botón gigante en la pantalla de inicio o una nota de voz rápida. Si el usuario tiene que elegir categoría, fecha, hora y prioridad antes de guardar, se distraerá y abandonará la app.
+• Captura en 1 Toque (Cero fricción): Apuntar una tarea debe requerir un solo botón gigante en la pantalla de inicio, por escritura o mediante dictado de voz. La transcripción debe poder revisarse y editarse antes de guardar. El micrófono solo se activa cuando el usuario elige dictar; el reconocimiento usa el servicio de voz del dispositivo y FocusPaws no guarda audio.
 • El "Modo Foco" con Cuenta Atrás Visual: Las personas con TDAH sufren de "ceguera temporal" (no perciben el paso del tiempo). En lugar de un reloj digital con números, necesitas un temporizador visual (como un círculo de color que se va vaciando, estilo Time Timer). Esto activa una urgencia visual sana en el cerebro.
 • Recompensa de Dopamina Inmediata (Gamificación): Al marcar una tarea como completada, no basta con una simple casilla. Debe haber una animación llamativa, un sonido satisfactorio (pop/estallido) o la suma de puntos para subir de nivel a una mascota virtual. La dopamina instantánea es la clave para que vuelvan a abrir la app.
 
@@ -56,7 +56,8 @@ Para que el sistema de la mascota funcione y sea sostenible para ti a nivel de d
 	• Suena un efecto de sonido satisfactorio ("¡Pop!" / "¡Chinchín!").
 	• La pantalla lanza confeti digital parpadeante.
 	• El huevo recibe "puntos de enfoque" hasta que eclosiona en una pequeña criatura.
-• Evolución: A las 10 tareas completadas, la criatura crece. A las 50, evoluciona a su forma final. Esto mantiene al usuario motivado a largo plazo.
+• Progresión por niveles: Cada tarea completada otorga 15 puntos. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180 cada uno; y los niveles 6 a 8, 210 cada uno. El requisito aumenta 30 puntos cada tres niveles. La insignia del animal elegido muestra el nivel actual, celebra cada subida y la barra muestra el avance y objetivo del siguiente nivel. Los puntos totales se mantienen visibles para que el progreso anterior nunca parezca perdido.
+• Personalización inicial: En el primer inicio, la persona elige su nombre y uno de cinco animales. El saludo de la pantalla principal muestra solo su nombre; el animal seleccionado aparece en el recuadro de progreso y es quien celebra las subidas de nivel. Los animales se llaman Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo) y Bruno (oso).
 
 -------------------
 
@@ -147,7 +148,7 @@ Bloque 1: Configuración del Proyecto y Base de Datos (Backend)
 Bloque 2: Desarrollo de la Interfaz Visual (Frontend)
 
 • Tarea 2.1: Diseñar la Pantalla Principal. Coloca un marcador de posición para la mascota, un botón grande para añadir tareas y un listado dinámico que lea las tareas de la base de datos.
-• Tarea 2.2: Programar la lógica del botón Añadir Tarea. Al tocarlo, debe abrir un campo de texto simple. Al darle a guardar, añade el registro a la base de datos y refresca la pantalla al instante.
+• Tarea 2.2: Programar la lógica del botón Añadir Tarea. Al tocarlo, debe abrir un campo de texto simple con la opción de dictar en español. La transcripción se puede revisar y editar antes de guardar. Al guardar, añade el registro a la base de datos y refresca la pantalla al instante.
 • Tarea 2.3: Diseñar la Pantalla de Modo Foco. Crea un componente de reloj circular animado (puedes usar librerías como percent_indicator en Flutter) que reciba un tiempo fijo (por ejemplo, 25 minutos) y vaya reduciendo el círculo cromático uniformemente.
 
 Bloque 3: Lógica de Gamificación y Recompensa
@@ -156,3 +157,10 @@ Bloque 3: Lógica de Gamificación y Recompensa
 • Tarea 3.2: Implementar la Pantalla de Recompensa. Añade un activador de sonido satisfactorio (un archivo de audio corto tipo .mp3) y suma +15 puntos a la variable de la mascota en la base de datos al pulsar "Continuar".
 
 -------------------------------------
+
+🛠️ Entorno de desarrollo y forma de trabajo
+
+• Android Studio está instalado en `F:\Android\Android Studio`; el Android SDK y el emulador están en `F:\Android\Sdk`. Usa estas rutas al configurar o ejecutar las herramientas de Android; no busques primero en las rutas predeterminadas.
+• El SDK de Flutter se instalará en `F:\Android\flutter`.
+• Desarrollaremos la aplicación de forma incremental: completaremos y verificaremos cada funcionalidad antes de pasar a la siguiente.
+• La interfaz debe ser cuidada, clara e intuitiva, con especial atención a reducir la carga cognitiva y la saturación visual para las personas con TDAH.
