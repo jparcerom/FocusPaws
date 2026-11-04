@@ -149,6 +149,124 @@ void main() {
     expect(find.text('15 pts totales'), findsOneWidget);
   });
 
+  testWidgets('completes a focus block and grants its reward only once', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _homeApp(focusDuration: const Duration(seconds: 3)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Añadir una tarea'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('task-title-field')),
+      'Preparar el desayuno',
+    );
+    await tester.tap(find.byKey(const Key('save-task-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('start-focus-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('Modo foco'), findsOneWidget);
+    expect(find.text('Preparar el desayuno'), findsOneWidget);
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(
+            find.byKey(const Key('focus-timer-progress')),
+          )
+          .value,
+      1,
+    );
+
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('¡Conseguido!'), findsOneWidget);
+    expect(find.text('+15 puntos de energía para tu mascota'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('focus-reward-continue-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1/1 hechas'), findsOneWidget);
+    expect(find.text('15 pts totales'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('task-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('task-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('1/1 hechas'), findsOneWidget);
+    expect(find.text('15 pts totales'), findsOneWidget);
+  });
+
+  testWidgets('micro-pause resumes focus and pause stops the countdown', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FocusSessionPage(
+          taskTitle: 'Estudiar',
+          avatar: UserAvatar.dog,
+          focusDuration: const Duration(seconds: 8),
+          microPauseDuration: const Duration(seconds: 2),
+          onRewardContinue: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('focus-micro-pause-button')));
+    await tester.pump();
+    expect(find.text('Tómate un respiro'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byKey(const Key('focus-pause-button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('focus-pause-button')));
+    await tester.pump();
+    final pausedProgress = tester
+        .widget<CircularProgressIndicator>(
+          find.byKey(const Key('focus-timer-progress')),
+        )
+        .value;
+    await tester.pump(const Duration(seconds: 5));
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(
+            find.byKey(const Key('focus-timer-progress')),
+          )
+          .value,
+      pausedProgress,
+    );
+    await tester.tap(find.byKey(const Key('focus-resume-button')));
+    await tester.pump();
+    expect(find.byKey(const Key('focus-pause-button')), findsOneWidget);
+  });
+
+  testWidgets('requires confirmation before abandoning focus', (tester) async {
+    await tester.pumpWidget(_homeApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Añadir una tarea'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('task-title-field')),
+      'Leer un capítulo',
+    );
+    await tester.tap(find.byKey(const Key('save-task-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('start-focus-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('focus-abandon-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('¿Quieres abandonar el foco?'), findsOneWidget);
+    await tester.tap(find.text('Seguir enfocándome'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('focus-pause-button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('focus-abandon-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Abandonar'));
+    await tester.pumpAndSettle();
+    expect(find.text('0/1 hechas'), findsOneWidget);
+    expect(find.text('Leer un capítulo'), findsOneWidget);
+  });
+
   testWidgets('advances the pet level without losing lifetime points', (
     tester,
   ) async {
@@ -338,10 +456,13 @@ void main() {
   });
 }
 
-Widget _homeApp() => FocusPawsApp(
+Widget _homeApp({
+  Duration focusDuration = const Duration(minutes: 25),
+}) => FocusPawsApp(
   profileStore: _MemoryUserProfileStore(
     profile: const UserProfile(name: 'Alex', avatar: UserAvatar.cat),
   ),
+  focusDuration: focusDuration,
 );
 
 class _MemoryUserProfileStore implements UserProfileStore {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,9 +11,14 @@ void main() {
 }
 
 class FocusPawsApp extends StatelessWidget {
-  const FocusPawsApp({super.key, this.profileStore});
+  const FocusPawsApp({
+    super.key,
+    this.profileStore,
+    this.focusDuration = const Duration(minutes: 25),
+  });
 
   final UserProfileStore? profileStore;
+  final Duration focusDuration;
 
   static const _forest = Color(0xFF28644F);
   static const _ink = Color(0xFF1E3029);
@@ -43,6 +49,7 @@ class FocusPawsApp extends StatelessWidget {
       ),
       home: HomePage(
         profileStore: profileStore ?? SharedPreferencesUserProfileStore(),
+        focusDuration: focusDuration,
       ),
     );
   }
@@ -111,9 +118,14 @@ class SharedPreferencesUserProfileStore implements UserProfileStore {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.profileStore});
+  const HomePage({
+    super.key,
+    required this.profileStore,
+    this.focusDuration = const Duration(minutes: 25),
+  });
 
   final UserProfileStore profileStore;
+  final Duration focusDuration;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -176,20 +188,45 @@ class _HomePageState extends State<HomePage>
   }
 
   void _toggleTask(FocusTask task, bool isCompleted) {
+    if (isCompleted && !task.isCompleted) {
+      _completeTask(task);
+      return;
+    }
+
+    setState(() {
+      task.isCompleted = isCompleted;
+    });
+  }
+
+  void _completeTask(FocusTask task) {
     var leveledUp = false;
     setState(() {
-      if (!task.isCompleted && isCompleted) {
+      task.isCompleted = true;
+      if (!task.hasReceivedReward) {
         final previousLevel = PetProgress.fromTotalPoints(_earnedPoints).level;
         _earnedPoints += 15;
+        task.hasReceivedReward = true;
         leveledUp =
             PetProgress.fromTotalPoints(_earnedPoints).level > previousLevel;
       }
-      task.isCompleted = isCompleted;
     });
 
     if (leveledUp) {
       _levelUpController.forward(from: 0);
     }
+  }
+
+  Future<void> _startFocus(FocusTask task, UserAvatar avatar) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (context) => FocusSessionPage(
+          taskTitle: task.title,
+          avatar: avatar,
+          focusDuration: widget.focusDuration,
+          onRewardContinue: () => _completeTask(task),
+        ),
+      ),
+    );
   }
 
   @override
@@ -257,6 +294,7 @@ class _HomePageState extends State<HomePage>
                   child: _TaskCard(
                     task: task,
                     onChanged: (value) => _toggleTask(task, value),
+                    onStart: () => _startFocus(task, profile.avatar),
                   ),
                 ),
               ),
@@ -650,6 +688,7 @@ class FocusTask {
   final int id;
   final String title;
   bool isCompleted = false;
+  bool hasReceivedReward = false;
 }
 
 class PetProgress {
@@ -692,6 +731,413 @@ class PetProgress {
   int get pointsRequired => pointsRequiredForLevel(level);
 
   double get progress => pointsInLevel / pointsRequired;
+}
+
+enum _FocusSessionPhase { focusing, paused, microPause, completed }
+
+class FocusSessionPage extends StatefulWidget {
+  const FocusSessionPage({
+    super.key,
+    required this.taskTitle,
+    required this.avatar,
+    required this.onRewardContinue,
+    this.focusDuration = const Duration(minutes: 25),
+    this.microPauseDuration = const Duration(minutes: 2),
+  }) : assert(focusDuration > Duration.zero),
+       assert(microPauseDuration > Duration.zero);
+
+  final String taskTitle;
+  final UserAvatar avatar;
+  final VoidCallback onRewardContinue;
+  final Duration focusDuration;
+  final Duration microPauseDuration;
+
+  @override
+  State<FocusSessionPage> createState() => _FocusSessionPageState();
+}
+
+class _FocusSessionPageState extends State<FocusSessionPage>
+    with WidgetsBindingObserver {
+  Timer? _ticker;
+  DateTime? _backgroundedAt;
+  late Duration _focusRemaining;
+  late Duration _microPauseRemaining;
+  _FocusSessionPhase _phase = _FocusSessionPhase.focusing;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _focusRemaining = widget.focusDuration;
+    _microPauseRemaining = widget.microPauseDuration;
+    _beginCountdown(_FocusSessionPhase.focusing, _focusRemaining);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      if (_phase == _FocusSessionPhase.focusing ||
+          _phase == _FocusSessionPhase.microPause) {
+        _backgroundedAt ??= DateTime.now();
+        _ticker?.cancel();
+        _ticker = null;
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      _resumeAfterBackground();
+    }
+  }
+
+  void _beginCountdown(_FocusSessionPhase phase, Duration duration) {
+    _ticker?.cancel();
+    _phase = phase;
+    if (phase == _FocusSessionPhase.focusing) {
+      _focusRemaining = duration;
+    } else {
+      _microPauseRemaining = duration;
+    }
+    _ticker = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _refreshCountdown(),
+    );
+  }
+
+  void _refreshCountdown() {
+    if (!mounted) return;
+    final isMicroPause = _phase == _FocusSessionPhase.microPause;
+    final remaining = (isMicroPause ? _microPauseRemaining : _focusRemaining) -
+        const Duration(seconds: 1);
+    if (remaining <= Duration.zero) {
+      _ticker?.cancel();
+      _ticker = null;
+      if (isMicroPause) {
+        setState(() {
+          _microPauseRemaining = Duration.zero;
+        });
+        _beginCountdown(_FocusSessionPhase.focusing, _focusRemaining);
+      } else {
+        setState(() {
+          _focusRemaining = Duration.zero;
+          _phase = _FocusSessionPhase.completed;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      if (isMicroPause) {
+        _microPauseRemaining = remaining;
+      } else {
+        _focusRemaining = remaining;
+      }
+    });
+  }
+
+  void _resumeAfterBackground() {
+    final backgroundedAt = _backgroundedAt;
+    if (backgroundedAt == null) return;
+    _backgroundedAt = null;
+    if (_phase == _FocusSessionPhase.paused ||
+        _phase == _FocusSessionPhase.completed) {
+      return;
+    }
+
+    var elapsed = DateTime.now().difference(backgroundedAt);
+    if (elapsed < Duration.zero) elapsed = Duration.zero;
+    if (_phase == _FocusSessionPhase.microPause) {
+      if (elapsed >= _microPauseRemaining) {
+        elapsed -= _microPauseRemaining;
+        _microPauseRemaining = Duration.zero;
+        _phase = _FocusSessionPhase.focusing;
+      } else {
+        _microPauseRemaining -= elapsed;
+      }
+    }
+
+    if (_phase == _FocusSessionPhase.focusing) {
+      if (elapsed >= _focusRemaining) {
+        _ticker?.cancel();
+        _ticker = null;
+        setState(() {
+          _focusRemaining = Duration.zero;
+          _phase = _FocusSessionPhase.completed;
+        });
+        return;
+      }
+      _focusRemaining -= elapsed;
+    }
+
+    setState(() {
+      _beginCountdown(_phase, _remainingFor(_phase));
+    });
+  }
+
+  Duration _remainingFor(_FocusSessionPhase phase) =>
+      phase == _FocusSessionPhase.microPause
+      ? _microPauseRemaining
+      : _focusRemaining;
+
+  void _pauseFocus() {
+    _ticker?.cancel();
+    _ticker = null;
+    _phase = _FocusSessionPhase.paused;
+  }
+
+  void _startMicroPause() {
+    _beginCountdown(_FocusSessionPhase.microPause, widget.microPauseDuration);
+  }
+
+  Future<void> _confirmAbandon() async {
+    final shouldAbandon = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Quieres abandonar el foco?'),
+        content: const Text(
+          'Este bloque no contará como terminado. Puedes volver a tu tarea '
+          'cuando quieras.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Seguir enfocándome'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Abandonar'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldAbandon == true && mounted) {
+      _ticker?.cancel();
+      Navigator.of(context).pop();
+    }
+  }
+
+  String _spokenTime(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    if (minutes == 0) return 'Quedan $seconds segundos';
+    return 'Quedan $minutes minutos y $seconds segundos';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_phase == _FocusSessionPhase.completed) return _buildReward(context);
+
+    final isMicroPause = _phase == _FocusSessionPhase.microPause;
+    final isPaused = _phase == _FocusSessionPhase.paused;
+    final remaining = isMicroPause ? _microPauseRemaining : _focusRemaining;
+    final total = isMicroPause
+        ? widget.microPauseDuration
+        : widget.focusDuration;
+    final progress = (remaining.inMilliseconds / total.inMilliseconds)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final phaseLabel = isMicroPause
+        ? 'Micro-pausa. ${_spokenTime(remaining)}.'
+        : isPaused
+        ? 'Foco en pausa. ${_spokenTime(remaining)}.'
+        : 'Modo foco. ${_spokenTime(remaining)}.';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Modo foco'),
+        leading: IconButton(
+          tooltip: 'Abandonar foco',
+          onPressed: _confirmAbandon,
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          children: [
+            Text(
+              isMicroPause
+                  ? 'Tómate un respiro'
+                  : isPaused
+                  ? 'Tu foco está en pausa'
+                  : 'Te acompaño en esta tarea',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.taskTitle,
+              key: const Key('focus-task-title'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: const Color(0xFF52685B),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Semantics(
+              label: phaseLabel,
+              child: ExcludeSemantics(
+                child: SizedBox(
+                  height: 224,
+                  width: 224,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        height: 210,
+                        width: 210,
+                        child: CircularProgressIndicator(
+                          key: const Key('focus-timer-progress'),
+                          value: progress,
+                          strokeWidth: 17,
+                          backgroundColor: const Color(0xFFDCE8DF),
+                          color: isMicroPause
+                              ? const Color(0xFFE9A72B)
+                              : const Color(0xFF28644F),
+                          strokeCap: StrokeCap.round,
+                        ),
+                      ),
+                      Text(
+                        widget.avatar.emoji,
+                        key: const Key('focus-pet-avatar'),
+                        style: const TextStyle(fontSize: 78),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              isMicroPause
+                  ? 'Estira los brazos y bebe un poco de agua. '
+                        'Volveremos al foco automáticamente.'
+                  : isPaused
+                  ? 'El tiempo está detenido. Cuando quieras, seguimos.'
+                  : 'Un paso cada vez. Tu mascota sigue aquí contigo.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFF52685B),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 28),
+            if (_phase == _FocusSessionPhase.focusing) ...[
+              FilledButton.icon(
+                key: const Key('focus-pause-button'),
+                onPressed: () => setState(_pauseFocus),
+                icon: const Icon(Icons.pause_rounded),
+                label: const Text('Pausar'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const Key('focus-micro-pause-button'),
+                onPressed: () => setState(_startMicroPause),
+                icon: const Icon(Icons.self_improvement_rounded),
+                label: const Text('Micro-pausa de 2 minutos'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+              ),
+            ] else if (isPaused)
+              FilledButton.icon(
+                key: const Key('focus-resume-button'),
+                onPressed: () => setState(
+                  () => _beginCountdown(
+                    _FocusSessionPhase.focusing,
+                    _focusRemaining,
+                  ),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text('Reanudar foco'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                ),
+              ),
+            const SizedBox(height: 10),
+            TextButton.icon(
+              key: const Key('focus-abandon-button'),
+              onPressed: _confirmAbandon,
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Abandonar foco'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReward(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('🎉 🐾 🎉', style: TextStyle(fontSize: 36)),
+                const SizedBox(height: 20),
+                Text(
+                  widget.avatar.emoji,
+                  key: const Key('reward-pet-avatar'),
+                  style: const TextStyle(fontSize: 88),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '¡Conseguido!',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Has completado «${widget.taskTitle}»',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '+15 puntos de energía para tu mascota',
+                  key: const Key('focus-reward-points'),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: const Color(0xFF28644F),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                FilledButton(
+                  key: const Key('focus-reward-continue-button'),
+                  onPressed: () {
+                    widget.onRewardContinue();
+                    Navigator.of(context).pop();
+                  },
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(56),
+                  ),
+                  child: const Text('Continuar'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _BrandHeader extends StatelessWidget {
@@ -1027,10 +1473,15 @@ class _EmptyTasksCard extends StatelessWidget {
 }
 
 class _TaskCard extends StatelessWidget {
-  const _TaskCard({required this.task, required this.onChanged});
+  const _TaskCard({
+    required this.task,
+    required this.onChanged,
+    required this.onStart,
+  });
 
   final FocusTask task;
   final ValueChanged<bool> onChanged;
+  final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
@@ -1050,6 +1501,13 @@ class _TaskCard extends StatelessWidget {
           if (value != null) onChanged(value);
         },
         controlAffinity: ListTileControlAffinity.leading,
+        secondary: IconButton(
+          key: ValueKey('start-focus-${task.id}'),
+          tooltip: 'Iniciar foco: ${task.title}',
+          onPressed: task.isCompleted ? null : onStart,
+          icon: const Icon(Icons.play_circle_fill_rounded),
+          color: const Color(0xFF28644F),
+        ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         title: Text(
           task.title,
