@@ -47,7 +47,7 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 
 - Completing a task through focus (or marking it complete) automatically redeems the accumulated balance and opens the active-rest screen. Its circular countdown starts immediately, and the end time is saved so the break can resume if the app is closed and reopened.
 - The **Physical walk**, **Play with my pet**, and **Free mode** options and the “How would you like to rest?” heading are centered.
-- Users can choose a physical-walk suggestion or play by petting the animal as it moves across the screen at different heights. Every 10 pets grants 2 status points, and the counter persists per profile. Each full minute of company also improves the pet's persisted mood.
+- Users can choose a physical-walk suggestion or play by petting the animal as it moves slowly across the screen, pausing for a few seconds at random positions and heights. Every 10 pets grants 2 status points, shown above the pet; the counter persists per profile. Each full minute of company also improves the pet's persisted mood.
 - Free mode keeps an ongoing Android notification and schedules an end alert even while the app is backgrounded. If Android does not allow notifications, free mode stays active and the timer continues in the app.
 - The **Finish rest** button returns to the tasks and adds the remaining time to the rest balance for a later break.
 - At the end, the app cancels the notifications, plays a brief vibration and sound, shows the pet's message, and returns directly to pending tasks.

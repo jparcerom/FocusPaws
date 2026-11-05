@@ -2488,8 +2488,10 @@ class ActiveRestBreakPage extends StatefulWidget {
 }
 
 class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   Timer? _ticker;
+  final math.Random _random = math.Random();
+  late final AnimationController _pointsRewardController;
   late Duration _remaining;
   late final Duration _totalDuration;
   _RestActivity _activity = _RestActivity.physical;
@@ -2498,9 +2500,10 @@ class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
   int _petMoodMinutesThisSession = 0;
   int _petTaps = 0;
   Timer? _petMovementTimer;
-  double _petHorizontalProgress = 0;
-  double _petVerticalOffset = 32;
-  int _petMovementStep = 0;
+  double _petHorizontalProgress = 0.5;
+  double _petVerticalOffset = 56;
+  Duration _petMoveDuration = const Duration(seconds: 3);
+  bool _showPointsReward = false;
   bool _isFinishing = false;
   bool _canExit = false;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
@@ -2509,6 +2512,15 @@ class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _pointsRewardController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 900),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) {
+            setState(() => _showPointsReward = false);
+          }
+        });
     _totalDuration = widget.endsAt.difference(widget.clock());
     _refreshRemaining();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -2522,18 +2534,21 @@ class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
     WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     _petMovementTimer?.cancel();
+    _pointsRewardController.dispose();
     super.dispose();
   }
 
-  void _schedulePetMovement() {
-    _petMovementTimer = Timer(const Duration(milliseconds: 1500), () {
+  void _schedulePetMovement([Duration delay = const Duration(seconds: 3)]) {
+    _petMovementTimer = Timer(delay, () {
       if (!mounted) return;
       setState(() {
-        _petMovementStep++;
-        _petHorizontalProgress = _petMovementStep.isOdd ? 1 : 0;
-        _petVerticalOffset = const [16.0, 56.0, 96.0][_petMovementStep % 3];
+        _petHorizontalProgress = _random.nextDouble();
+        _petVerticalOffset = 12 + _random.nextDouble() * 88;
+        _petMoveDuration = Duration(milliseconds: 2400 + _random.nextInt(1601));
       });
-      _schedulePetMovement();
+      _schedulePetMovement(
+        _petMoveDuration + Duration(seconds: 2 + _random.nextInt(4)),
+      );
     });
   }
 
@@ -2949,9 +2964,11 @@ class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
               ),
               AnimatedPositioned(
                 key: const Key('rest-pet-moving-target-position'),
-                duration: const Duration(milliseconds: 900),
+                duration: _petMoveDuration,
                 curve: Curves.easeInOut,
-                left: (constraints.maxWidth - 68) * _petHorizontalProgress,
+                left:
+                    (constraints.maxWidth - 68).clamp(0, double.infinity) *
+                    _petHorizontalProgress,
                 top: _petVerticalOffset,
                 child: Material(
                   color: Colors.transparent,
@@ -2972,6 +2989,40 @@ class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
                   ),
                 ),
               ),
+              if (_showPointsReward)
+                Positioned(
+                  left:
+                      (constraints.maxWidth - 68).clamp(0, double.infinity) *
+                          _petHorizontalProgress +
+                      18,
+                  top: _petVerticalOffset - 10,
+                  child: AnimatedBuilder(
+                    animation: _pointsRewardController,
+                    builder: (context, child) => Opacity(
+                      opacity: 1 - _pointsRewardController.value,
+                      child: Transform.translate(
+                        offset: Offset(0, -40 * _pointsRewardController.value),
+                        child: child,
+                      ),
+                    ),
+                    child: const Text(
+                      '+2 puntos',
+                      key: Key('rest-pet-points-reward'),
+                      style: TextStyle(
+                        color: Color(0xFF006B70),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        shadows: [
+                          Shadow(
+                            color: Colors.white,
+                            blurRadius: 5,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2998,8 +3049,15 @@ class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
   );
 
   void _recordPetTap() {
-    setState(() => _petTaps++);
+    final nextPatCount = widget.petPatCount + _petTaps + 1;
+    setState(() {
+      _petTaps++;
+      _showPointsReward = nextPatCount % 10 == 0;
+    });
     widget.onPetPat();
+    if (nextPatCount % 10 == 0) {
+      _pointsRewardController.forward(from: 0);
+    }
   }
 
   Widget _buildFreeRest(BuildContext context) => Column(

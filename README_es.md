@@ -47,7 +47,7 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 
 - Al completar una tarea desde el foco (o marcarla terminada) se canjea automáticamente el saldo acumulado y se abre el descanso activo. El temporizador circular empieza de inmediato y su hora de fin se guarda para reanudarlo si se cierra y vuelve a abrir la app.
 - Las opciones «Paseo físico», «Jugar con mi mascota» y «Modo libre», junto con el título «¿Cómo quieres descansar?», aparecen centradas.
-- Se puede elegir un paseo con sugerencias físicas o jugar a acariciar a la mascota mientras cruza la pantalla a distintas alturas. Cada 10 caricias se conceden 2 puntos de estado; el contador persiste por perfil. Cada minuto de compañía también mejora el humor de la mascota.
+- Se puede elegir un paseo con sugerencias físicas o jugar a acariciar a la mascota mientras cruza despacio la pantalla y se detiene unos segundos en posiciones aleatorias y a distintas alturas. Cada 10 caricias se conceden 2 puntos de estado, que aparecen sobre la mascota; el contador persiste por perfil. Cada minuto de compañía también mejora el humor de la mascota.
 - El modo libre mantiene una notificación de Android y programa un aviso al finalizar aunque la app esté en segundo plano. Si Android no permite las notificaciones, el modo libre sigue activo y el temporizador continúa en la app.
 - El botón «Terminar descanso» vuelve a las tareas y acumula el tiempo restante para otro descanso; el saldo puede canjearse en un descanso posterior.
 - Al terminar, la aplicación cancela las notificaciones, reproduce una vibración y un sonido breves, muestra el mensaje de la mascota y vuelve directamente a las tareas pendientes.

@@ -579,6 +579,7 @@ void main() {
       await tester.pump();
     }
     expect(find.text('Caricias: 10'), findsOneWidget);
+    expect(find.text('+2 puntos'), findsOneWidget);
     expect(progressStore.progress.petPatCount, 10);
     expect(progressStore.progress.points, 22);
 
