@@ -1,0 +1,7 @@
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/launcher/focuspaws_con_texto_1024.png"
+  adaptive_icon_background: "#FFF3D6"
+  adaptive_icon_foreground: "assets/launcher/focuspaws_con_texto_foreground.png"
+  min_sdk_android: 21
