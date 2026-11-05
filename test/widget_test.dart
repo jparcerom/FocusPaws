@@ -412,6 +412,7 @@ void main() {
         5,
       ).millisecondsSinceEpoch,
       petMoodMinutes: 9,
+      petPatCount: 9,
     );
 
     final restored = FocusTasksProgress.fromJson(progress.toJson());
@@ -430,6 +431,7 @@ void main() {
       DateTime(2026, 11, 4, 12, 5).millisecondsSinceEpoch,
     );
     expect(restored.petMoodMinutes, 9);
+    expect(restored.petPatCount, 9);
     expect(restored.stickerUnlockDates, ['2026-11-04']);
     expect(
       () => FocusTasksProgress.fromJson('{"points":-1,"tasks":[]}'),
@@ -447,9 +449,16 @@ void main() {
     expect(previousVersion.pendingCarryoverTaskIds, isEmpty);
     expect(previousVersion.activeRestEndTimeMillis, isNull);
     expect(previousVersion.petMoodMinutes, 0);
+    expect(previousVersion.petPatCount, 0);
     expect(
       () => FocusTasksProgress.fromJson(
         '{"points":0,"petMoodMinutes":-1,"tasks":[]}',
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => FocusTasksProgress.fromJson(
+        '{"points":0,"petPatCount":-1,"tasks":[]}',
       ),
       throwsFormatException,
     );
@@ -476,6 +485,43 @@ void main() {
 
     expect(find.byType(ActiveRestBreakPage), findsOneWidget);
     expect(find.text('01:30'), findsOneWidget);
+  });
+
+  testWidgets('accumulates remaining rest time when ending early', (
+    tester,
+  ) async {
+    final now = DateTime(2026, 11, 5, 12);
+    final progressStore = _MemoryFocusTasksProgressStore()
+      ..progress = FocusTasksProgress(
+        tasks: const [],
+        points: 0,
+        bonusRestSeconds: 30,
+        lastActiveDate: '2026-11-05',
+        activeRestEndTimeMillis: now
+            .add(const Duration(seconds: 90))
+            .millisecondsSinceEpoch,
+      );
+    final notificationService = _MemoryRestBreakNotificationService();
+
+    await tester.pumpWidget(
+      _homeApp(
+        progressStore: progressStore,
+        clock: () => now,
+        restBreakNotificationService: notificationService,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActiveRestBreakPage), findsOneWidget);
+    final finishButton = find.byKey(const Key('rest-finish-early-button'));
+    await _scrollToFinder(tester, finishButton);
+    await tester.tap(finishButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActiveRestBreakPage), findsNothing);
+    expect(progressStore.progress.activeRestEndTimeMillis, isNull);
+    expect(progressStore.progress.bonusRestSeconds, 120);
+    expect(notificationService.cancelledTimers, 1);
   });
 
   testWidgets('spends accumulated rest time in the active-rest flow', (
@@ -526,6 +572,16 @@ void main() {
     expect(find.text('Minutos felices: 1'), findsOneWidget);
     expect(progressStore.progress.petMoodMinutes, 1);
 
+    final petInteractButton = find.byKey(const Key('rest-pet-interact-button'));
+    await _scrollToFinder(tester, petInteractButton);
+    for (var pat = 0; pat < 10; pat++) {
+      await tester.tap(petInteractButton);
+      await tester.pump();
+    }
+    expect(find.text('Caricias: 10'), findsOneWidget);
+    expect(progressStore.progress.petPatCount, 10);
+    expect(progressStore.progress.points, 22);
+
     final freeActivity = find.byKey(const Key('rest-activity-free'));
     await _scrollToFinder(tester, freeActivity);
     await tester.tap(freeActivity);
@@ -542,6 +598,50 @@ void main() {
     await tester.tap(physicalActivity);
     await tester.pumpAndSettle();
     expect(notificationService.cancelledTimers, 1);
+  });
+
+  testWidgets('keeps free rest mode active when notifications fail', (
+    tester,
+  ) async {
+    final now = DateTime(2026, 11, 5, 12);
+    final progressStore = _MemoryFocusTasksProgressStore()
+      ..progress = FocusTasksProgress(
+        tasks: const [],
+        points: 0,
+        activeRestEndTimeMillis: now
+            .add(const Duration(minutes: 5))
+            .millisecondsSinceEpoch,
+      );
+    final notificationService = _MemoryRestBreakNotificationService()
+      ..showTimerException = Exception('PlatformException(test failure)');
+
+    await tester.pumpWidget(
+      _homeApp(
+        progressStore: progressStore,
+        clock: () => now,
+        restBreakNotificationService: notificationService,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final freeActivity = find.byKey(const Key('rest-activity-free'));
+    await _scrollToFinder(tester, freeActivity);
+    await tester.tap(freeActivity);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Puedes usar el móvil o hacer otra actividad. El temporizador '
+        'sigue activo.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Modo libre activo, pero no se pudo programar la notificación:',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('persists daily sticker unlocks and resets the daily counter', (
@@ -1422,6 +1522,7 @@ class _MemoryFocusTasksProgressStore implements FocusTasksProgressStore {
       pendingCarryoverTaskIds: progress.pendingCarryoverTaskIds,
       activeRestEndTimeMillis: progress.activeRestEndTimeMillis,
       petMoodMinutes: progress.petMoodMinutes,
+      petPatCount: progress.petPatCount,
     );
   }
 }
@@ -1429,12 +1530,14 @@ class _MemoryFocusTasksProgressStore implements FocusTasksProgressStore {
 class _MemoryRestBreakNotificationService
     implements RestBreakNotificationService {
   bool permissionGranted = true;
+  Exception? showTimerException;
   int shownTimers = 0;
   int cancelledTimers = 0;
 
   @override
   Future<bool> showRestTimer(DateTime endsAt) async {
     shownTimers++;
+    if (showTimerException case final error?) throw error;
     return permissionGranted;
   }
 

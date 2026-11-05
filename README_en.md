@@ -12,6 +12,7 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 - The app is versioned as `1.0.0+1` in `pubspec.yaml`; the splash displays the product version as `1.0`. The same pastel yellow is used for the app background.
 - Secondary surfaces use a light mint inspired by the logo; primary buttons use its dark teal with white text.
 - The main-screen header shows the transparent circular icon without text next to FocusPaws.
+- Rest notifications use the existing Android `ic_launcher_foreground` resource.
 
 ### Profiles
 
@@ -40,14 +41,17 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 - The visual timer uses the task's estimated duration, shows no numeric countdown, and can be paused/resumed. A 2-minute micro-break automatically returns to focus.
 - The bonus-rest balance and snacks appear with the pet's progress. The card shows the current level and progress to the next level, not lifetime points. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels.
 - Daily progress counts distinct tasks completed on the local calendar date. Completing three tasks in one day unlocks a sticker; the history and sticker album persist with the rest of the progress. The album is visible during development and can later be hidden behind a feature flag while daily progress stays on Home. Day changes are detected both while the app stays open and when it is reopened.
-- The name and animal are saved per profile. Tasks, points, bonus rest, snacks, and daily history are kept in a separate local record for each profile. Existing data is migrated to the original profile during an update so it is not mixed with new users' progress.
+- The name and animal are saved per profile. Tasks, points, bonus rest, snacks, petting count, and daily history are kept in a separate local record for each profile. Existing data is migrated to the original profile during an update so it is not mixed with new users' progress.
 
 ### Entering a rest break
 
 - Completing a task through focus (or marking it complete) automatically redeems the accumulated balance and opens the active-rest screen. Its circular countdown starts immediately, and the end time is saved so the break can resume if the app is closed and reopened.
-- Users can choose a physical-walk suggestion, interact with the pet (each full minute improves its persisted mood), or activate controlled free mode. Free mode keeps an ongoing Android notification and schedules an end alert even while the app is backgrounded.
+- The **Physical walk**, **Play with my pet**, and **Free mode** options and the “How would you like to rest?” heading are centered.
+- Users can choose a physical-walk suggestion or play by petting the animal as it moves across the screen at different heights. Every 10 pets grants 2 status points, and the counter persists per profile. Each full minute of company also improves the pet's persisted mood.
+- Free mode keeps an ongoing Android notification and schedules an end alert even while the app is backgrounded. If Android does not allow notifications, free mode stays active and the timer continues in the app.
+- The **Finish rest** button returns to the tasks and adds the remaining time to the rest balance for a later break.
 - At the end, the app cancels the notifications, plays a brief vibration and sound, shows the pet's message, and returns directly to pending tasks.
-- The balance is consumed when the break starts. The pet is currently represented by its emoji and a resting indicator; dedicated park illustrations and animations from the proposal remain to be created.
+- The rest balance is redeemed when the break starts. In the pet game, the pet is represented by its animated emoji; dedicated park illustrations from the proposal remain to be created.
 
 ## Remaining work to align with the product brief
 
@@ -55,18 +59,6 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 - Complete the reward celebration with pet animation, confetti, and sound.
 - Review the pet's visual presentation and mood/energy states against the proposal.
 - Evaluate a subtle notification when the app is backgrounded during focus, respecting permissions and system behavior.
-
-## Resumption point
-
-Task size now determines the focus timer and reward, including the 50% threshold and the size-based rest cap. There are six pets in a 2 × 3 grid. The profile selector, profile editor, and **Finish day** action are implemented; progress is isolated per profile and existing data is migrated. Continue without rebuilding these flows.
-
-**Validation for this iteration:** `flutter analyze` reported no issues, all `flutter test` tests passed, and the debug APK was built, installed, and launched on `emulator-5554`.
-
-**Paused for user testing:** the active-rest flow is implemented and covered by automated tests. Development is paused here so the user can test it on a device/emulator, especially notification permission, free mode in the background, and the end alert. When resuming, collect those test results before changing the flow.
-
-**Next step after testing:** address any observed issues, then develop dedicated pet illustrations and animations.
-
-**Pending decision:** the product brief suggests that the pet loses some energy when a user abandons a session, but does not define how much or how it should be calculated. Do not implement that penalty until its behavior is agreed.
 
 ## Development environment
 

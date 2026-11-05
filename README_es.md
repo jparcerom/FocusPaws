@@ -12,6 +12,7 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 - La aplicación está versionada como `1.0.0+1` en `pubspec.yaml`; el splash presenta la versión de producto como `1.0`. El mismo amarillo pastel es el fondo general de la aplicación.
 - Los fondos secundarios usan un verde menta claro inspirado en el logotipo; los botones principales usan su verde azulado oscuro con texto blanco.
 - En la cabecera de la pantalla principal se muestra el icono circular sin texto, con transparencia, junto a FocusPaws.
+- Las notificaciones de descanso usan el recurso `ic_launcher_foreground` existente en Android.
 
 ### Perfiles
 
@@ -40,14 +41,17 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 - El temporizador visual usa la duración estimada de la tarea, no muestra una cuenta numérica y permite pausar/reanudar. Incluye una micro-pausa de 2 minutos que vuelve al foco automáticamente.
 - El saldo de descanso y los snacks se muestran junto al progreso de la mascota. La tarjeta muestra nivel y progreso hacia el siguiente nivel, no los puntos totales acumulados. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180; y los niveles 6 a 8, 210. El requisito aumenta 30 puntos cada tres niveles.
 - El progreso diario cuenta tareas distintas completadas en la fecha local. Al completar tres en un día se desbloquea una pegatina; el historial y el álbum persisten junto al resto del progreso. El álbum está visible durante el desarrollo y preparado para ocultarse mediante una bandera, manteniendo el progreso diario en Inicio. El cambio de día se detecta aunque la app permanezca abierta o se vuelva a abrir.
-- El nombre y el animal se guardan por perfil. Las tareas, puntos, tiempo de descanso, snacks e historial diario se guardan en un registro independiente por perfil. Al actualizar, los datos existentes se migran al perfil anterior sin mezclar el progreso de usuarios nuevos.
+- El nombre y el animal se guardan por perfil. Las tareas, puntos, tiempo de descanso, snacks, caricias e historial diario se guardan en un registro independiente por perfil. Al actualizar, los datos existentes se migran al perfil anterior sin mezclar el progreso de usuarios nuevos.
 
 ### Entrada al descanso
 
 - Al completar una tarea desde el foco (o marcarla terminada) se canjea automáticamente el saldo acumulado y se abre el descanso activo. El temporizador circular empieza de inmediato y su hora de fin se guarda para reanudarlo si se cierra y vuelve a abrir la app.
-- Se puede elegir un paseo con sugerencias físicas, interactuar con la mascota (cada minuto mejora su humor persistido) o activar el modo libre. Este último mantiene una notificación permanente de Android y programa un aviso al finalizar aunque la app esté en segundo plano.
+- Las opciones «Paseo físico», «Jugar con mi mascota» y «Modo libre», junto con el título «¿Cómo quieres descansar?», aparecen centradas.
+- Se puede elegir un paseo con sugerencias físicas o jugar a acariciar a la mascota mientras cruza la pantalla a distintas alturas. Cada 10 caricias se conceden 2 puntos de estado; el contador persiste por perfil. Cada minuto de compañía también mejora el humor de la mascota.
+- El modo libre mantiene una notificación de Android y programa un aviso al finalizar aunque la app esté en segundo plano. Si Android no permite las notificaciones, el modo libre sigue activo y el temporizador continúa en la app.
+- El botón «Terminar descanso» vuelve a las tareas y acumula el tiempo restante para otro descanso; el saldo puede canjearse en un descanso posterior.
 - Al terminar, la aplicación cancela las notificaciones, reproduce una vibración y un sonido breves, muestra el mensaje de la mascota y vuelve directamente a las tareas pendientes.
-- El saldo se consume al iniciar el descanso. La mascota se representa por ahora con su emoji y un indicador de que está descansando; quedan pendientes las ilustraciones y animaciones específicas del parque descrito en la propuesta.
+- El saldo se consume al iniciar el descanso. En el juego de descanso, la mascota se representa con su emoji animado; quedan pendientes las ilustraciones específicas del parque descrito en la propuesta.
 
 ## Pendiente para alinear con el documento
 
@@ -55,18 +59,6 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 - Completar la celebración de recompensa con confeti y sonido.
 - Revisar la presentación y los estados de ánimo/energía de la mascota frente a la propuesta visual.
 - Evaluar el aviso sutil al salir de la app durante el foco, respetando permisos y comportamiento del sistema.
-
-## Punto de reanudación
-
-El tamaño de tarea ya determina el temporizador y la recompensa, incluidos el límite del 50% y el tope de descanso por tamaño. Las mascotas son seis, en una cuadrícula 2 × 3. El selector de perfiles, el panel de edición y el botón «Finalizar día» ya están implementados; el progreso se separa por perfil y conserva los datos previos mediante migración. Continuar desde el siguiente paso sin rehacer estos flujos.
-
-**Validación de esta iteración:** `flutter analyze` sin incidencias, todas las pruebas de `flutter test` aprobadas y APK debug compilado, instalado y abierto en `emulator-5554`.
-
-**Pausa para pruebas:** el flujo de descanso activo está implementado y cubierto por pruebas automatizadas. Se pausa aquí el desarrollo para que el usuario pruebe el comportamiento en el dispositivo/emulador, especialmente el permiso de notificaciones, el modo libre en segundo plano y el aviso al finalizar. Al reanudar, recoger primero los resultados de esas pruebas antes de cambiar el flujo.
-
-**Siguiente paso tras las pruebas:** corregir cualquier incidencia observada; después avanzar con las ilustraciones y animaciones de la mascota.
-
-**Decisión pendiente:** el documento propone que la mascota pierda algo de energía al abandonar, pero no define cuánto ni cómo se calcula. No implementar esa penalización hasta acordar su comportamiento.
 
 ## Entorno de desarrollo
 
