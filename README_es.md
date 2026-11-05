@@ -4,6 +4,11 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 
 ## Funcionalidades implementadas
 
+### Icono Android
+
+- Se usa el icono circular sin texto del paquete `doc/FocusPaws_Flutter_Android` (el launcher muestra el nombre de la app). La fuente usada por el proyecto está en `assets/launcher`; `flutter_launcher_icons.yaml` genera los recursos para Android.
+- La capa foreground se amplía un 5 % para que el círculo cubra el borde de la máscara y evitar halos. Al regenerar recursos, hay que quitar el `<inset>` del 16 % que `flutter_launcher_icons` añade en `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`; de lo contrario, el icono vuelve a verse pequeño.
+
 ### Perfiles
 
 - El onboarding permite elegir nombre y uno de seis animales, dispuestos en dos filas de tres; el perfil se guarda localmente. El saludo muestra solo el nombre y el animal seleccionado aparece en el recuadro de progreso: Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) o Panda.
@@ -18,7 +23,7 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 
 ### Modo foco y recompensas
 
-- Al crear una tarea se puede elegir un tamaño rápido: Paso corto (15 min, +10 puntos), Bloque estándar (30 min, +20 puntos) o Gran esfuerzo (45 min, +40 puntos). Las tareas anteriores a esta opción se interpretan como estándar.
+- Al crear una tarea se elige entre tres botones de texto: Corto (15 min, +10 puntos), Medio (30 min, +20 puntos) y Largo (45 min, +40 puntos). Los botones no muestran tiempos ni puntos; las tareas anteriores a esta opción se interpretan como estándar.
 - La nueva tabla se aplica a las tareas que se completen a partir de ahora; los puntos ya ganados se conservan sin cambios.
 - Los puntos se conceden una sola vez por tarea, tanto al completarla desde Inicio como tras una sesión de foco.
 - Si se termina la tarea antes de consumir la mitad del tiempo estimado, se reciben los puntos del tamaño elegido, pero no minutos extra de descanso. Si se completa al menos la mitad, el tiempo restante se suma al descanso, con un máximo de 3, 7 o 10 minutos según el tamaño.

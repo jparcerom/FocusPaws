@@ -116,18 +116,26 @@ enum UserAvatar {
 }
 
 enum FocusTaskSize {
-  short(minutes: 15, points: 10, maxRestBonusMinutes: 3, label: 'Paso corto'),
+  short(
+    minutes: 15,
+    points: 10,
+    maxRestBonusMinutes: 3,
+    label: 'Paso corto',
+    buttonLabel: 'Corto',
+  ),
   standard(
     minutes: 30,
     points: 20,
     maxRestBonusMinutes: 7,
     label: 'Bloque estándar',
+    buttonLabel: 'Medio',
   ),
   long(
     minutes: 45,
     points: 40,
     maxRestBonusMinutes: 10,
     label: 'Gran esfuerzo',
+    buttonLabel: 'Largo',
   );
 
   const FocusTaskSize({
@@ -135,12 +143,14 @@ enum FocusTaskSize {
     required this.points,
     required this.maxRestBonusMinutes,
     required this.label,
+    required this.buttonLabel,
   });
 
   final int minutes;
   final int points;
   final int maxRestBonusMinutes;
   final String label;
+  final String buttonLabel;
 
   Duration get duration => Duration(minutes: minutes);
   Duration get maxRestBonus => Duration(minutes: maxRestBonusMinutes);
@@ -3350,20 +3360,11 @@ class _TaskSizeButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            size.label,
-            style: Theme.of(context).textTheme.labelSmall
-                ?.copyWith(color: const Color(0xFF52685B), fontSize: 9),
+            size.buttonLabel,
+            style: Theme.of(context).textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w800),
             textAlign: TextAlign.center,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(
-            '${size.minutes} min',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          Text(
-            '+${size.points} pts',
-            style: Theme.of(context).textTheme.labelSmall,
           ),
         ],
       ),

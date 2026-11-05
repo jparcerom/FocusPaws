@@ -526,6 +526,25 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Añadir una tarea'));
     await tester.pumpAndSettle();
+    for (final entry in {
+      'short': 'Corto',
+      'standard': 'Medio',
+      'long': 'Largo',
+    }.entries) {
+      final button = find.byKey(Key('task-size-${entry.key}'));
+      expect(
+        find.descendant(of: button, matching: find.text(entry.value)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: button, matching: find.textContaining('min')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: button, matching: find.textContaining('pts')),
+        findsNothing,
+      );
+    }
     await tester.enterText(
       find.byKey(const Key('task-title-field')),
       'Hacer la cama',

@@ -59,6 +59,12 @@ Para que el sistema de la mascota funcione y sea sostenible para ti a nivel de d
 • Progresión por niveles: Cada tarea otorga puntos según su tamaño: 10, 20 o 40. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180 cada uno; y los niveles 6 a 8, 210 cada uno. El requisito aumenta 30 puntos cada tres niveles. La insignia del animal elegido muestra el nivel actual, celebra cada subida y la barra muestra el avance y objetivo del siguiente nivel. Los puntos acumulados se conservan para calcular niveles, pero el total de por vida no se muestra para mantener la pantalla sencilla.
 • Personalización inicial: En el primer inicio, la persona elige su nombre y uno de seis animales, organizados en dos filas de tres. El saludo de la pantalla principal muestra solo su nombre; el animal seleccionado aparece en el recuadro de progreso y es quien celebra las subidas de nivel. Los animales se llaman Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) y Panda.
 
+### Icono de la aplicación Android
+
+- Se utiliza el icono circular sin texto incluido en el paquete proporcionado `doc/FocusPaws_Flutter_Android`; Android muestra el nombre de la aplicación debajo.
+- El proyecto conserva en `assets/launcher` el PNG circular base, el foreground con zona segura y la variante de foreground ampliada un 5 % para cubrir la máscara y evitar halos. `flutter_launcher_icons.yaml` selecciona estos recursos y genera las variantes Android.
+- El generador añade por defecto un `<inset android:inset="16%">` al icono adaptativo. Después de ejecutarlo, se elimina ese inset de `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` para que no reduzca por segunda vez el foreground. Si se regeneran los recursos, hay que repetir este ajuste y compilar e instalar la app para revisar la máscara real del launcher.
+
 ### Ajustes acordados a la pantalla de tareas
 
 - La cabecera muestra «FocusPaws» y el botón «Finalizar día» alineado a su derecha; el acceso al perfil se mantiene en el selector y su panel, no en la pantalla de tareas.
@@ -154,7 +160,7 @@ Bloque 1: Configuración del Proyecto y Base de Datos (Backend)
 Bloque 2: Desarrollo de la Interfaz Visual (Frontend)
 
 • Tarea 2.1: Diseñar la Pantalla Principal. Coloca un marcador de posición para la mascota, un botón grande para añadir tareas y un listado dinámico que lea las tareas de la base de datos.
-• Tarea 2.2: Programar la lógica del botón Añadir Tarea. Al tocarlo, debe abrir un campo de texto simple con la opción de dictar en español. La transcripción se puede revisar y editar antes de guardar. Ofrece tres tamaños rápidos: Paso corto (15 min), Bloque estándar (30 min) y Gran esfuerzo (45 min). Al guardar, añade el título y el tiempo estimado a la base de datos y refresca la pantalla al instante.
+• Tarea 2.2: Programar la lógica del botón Añadir Tarea. Al tocarlo, debe abrir un campo de texto simple con la opción de dictar en español. La transcripción se puede revisar y editar antes de guardar. Ofrece tres botones de tamaño con solo texto: Corto (15 min), Medio (30 min) y Largo (45 min); no mostrar los minutos ni los puntos dentro de los botones. Al guardar, añade el título y el tiempo estimado a la base de datos y refresca la pantalla al instante.
 • Tarea 2.3: Diseñar la Pantalla de Modo Foco. Crea un componente de reloj circular animado (puedes usar librerías como percent_indicator en Flutter) que tome la estimación de la tarea (15, 30 o 45 minutos) y vaya reduciendo el círculo cromático uniformemente.
 
 Bloque 3: Lógica de Gamificación y Recompensa

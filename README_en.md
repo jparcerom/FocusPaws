@@ -4,6 +4,11 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 
 ## Implemented features
 
+### Android app icon
+
+- The app uses the circular icon without text from `doc/FocusPaws_Flutter_Android` (the launcher displays the app name). Its project source is in `assets/launcher`; `flutter_launcher_icons.yaml` generates the Android resources.
+- The foreground layer is enlarged by 5% so the circle covers the mask edge and avoids halos. When regenerating resources, remove the 16% `<inset>` that `flutter_launcher_icons` adds to `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`; otherwise, the icon will look small again.
+
 ### Profiles
 
 - Onboarding lets users choose a name and one of six animals in a two-row, three-column grid; the profile is saved locally. The greeting shows only the person's name, and the selected animal appears in the progress card: Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), or Panda.
@@ -18,7 +23,7 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 
 ### Focus Mode and rewards
 
-- New tasks can be assigned a quick size: Short step (15 min, +10 points), Standard block (30 min, +20 points), or Big effort (45 min, +40 points). Tasks created before this option was added are treated as standard.
+- New tasks use three text-only size buttons: Short (15 min, +10 points), Medium (30 min, +20 points), and Long (45 min, +40 points). The buttons do not display durations or points. Tasks created before this option was added are treated as standard.
 - The new reward table applies to tasks completed from now on; previously earned points are preserved unchanged.
 - Points are awarded only once per task, whether it is completed from Home or after a focus session.
 - If a task is finished before half of its estimated time has elapsed, the user receives the size-based points but no bonus rest time. If at least half the block has elapsed, the remaining time is added to the rest balance, capped at 3, 7, or 10 minutes according to task size.

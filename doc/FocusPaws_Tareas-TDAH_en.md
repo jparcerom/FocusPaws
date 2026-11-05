@@ -63,6 +63,12 @@ To keep the pet system sustainable to build for the initial MVP, use simple prog
 - **Level progression:** Each task awards 10, 20, or 40 points according to its selected size. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels. The avatar displays its current level and celebrates each level-up, and the bar shows progress toward the next level. Accumulated points are retained for level calculations, but the lifetime total is hidden to keep the screen simple.
 - **First-run personalization:** On first launch, users choose a name and one of six animals, shown in a two-row, three-column grid. The home-screen greeting shows only their name; the selected animal appears in the progress card and celebrates level-ups. The animals are named Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), and Panda.
 
+### Android app icon
+
+- The app uses the circular icon without text from the provided `doc/FocusPaws_Flutter_Android` package; Android displays the app name underneath.
+- The project keeps the base circular PNG, safe-zone foreground, and foreground enlarged by 5% in `assets/launcher` to cover the mask edge and avoid halos. `flutter_launcher_icons.yaml` selects these assets and generates Android variants.
+- The generator adds a `<inset android:inset="16%">` to the adaptive icon by default. After running it, remove that inset from `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` so the foreground is not reduced a second time. Repeat this adjustment after regenerating resources, then build and install the app to check the actual launcher mask.
+
 ### Agreed task-screen refinements
 
 - The header shows **FocusPaws** and a **Finish day** button aligned to its right; profile access stays in the selector and profile hub rather than the task screen.
@@ -161,7 +167,7 @@ If you are building this yourself (with Flutter/React Native or a no-code tool s
 ### Block 2: Visual interface (frontend)
 
 - **Task 2.1:** Design the home screen. Add a pet placeholder, a large button for adding tasks, and a dynamic list that reads tasks from the database.
-- **Task 2.2:** Implement the Add Task button. Tapping it should open a simple text field with an option to dictate in Spanish. Let users review and edit the transcription before saving. Offer three quick sizes: Short step (15 min), Standard block (30 min), and Big effort (45 min). Save the title and estimated duration, then refresh the screen immediately.
+- **Task 2.2:** Implement the Add Task button. Tapping it should open a simple text field with an option to dictate in Spanish. Let users review and edit the transcription before saving. Offer three text-only size buttons: Short (15 min), Medium (30 min), and Long (45 min); do not show durations or points inside the buttons. Save the title and estimated duration, then refresh the screen immediately.
 - **Task 2.3:** Design the Focus Mode screen. Create an animated circular timer component (you could use a Flutter library such as `percent_indicator`) that uses the task estimate (15, 30, or 45 minutes) and steadily reduces the colored circle.
 
 ### Block 3: Gamification and rewards
