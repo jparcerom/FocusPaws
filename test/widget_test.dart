@@ -43,7 +43,7 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('progress-pet-avatar'))).data,
       '🦊',
     );
-    expect(find.text('Foxy 🐾'), findsOneWidget);
+    expect(find.text('Soy Foxy 🐾'), findsOneWidget);
     expect(find.byKey(const Key('progress-pet-avatar')), findsOneWidget);
     expect(find.byKey(const Key('profile-avatar-display')), findsNothing);
 
@@ -63,7 +63,7 @@ void main() {
     await tester.tap(find.byKey(const Key('enter-tasks-button')));
     await tester.pumpAndSettle();
     expect(find.text('¡Hola, Lucía!'), findsOneWidget);
-    expect(find.text('Foxy 🐾'), findsOneWidget);
+    expect(find.text('Soy Foxy 🐾'), findsOneWidget);
     expect(find.text('¡Qué bueno tenerte aquí!'), findsNothing);
   });
 
@@ -156,8 +156,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('create-profile-button')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('create-profile-button')));
+    final createProfileButton = find.byKey(const Key('create-profile-button'));
+    expect(createProfileButton, findsOneWidget);
+    final button = tester.widget<FilledButton>(createProfileButton);
+    expect(button.style?.backgroundColor?.resolve({}), const Color(0xFF006B70));
+    expect(button.style?.foregroundColor?.resolve({}), Colors.white);
+    await tester.tap(createProfileButton);
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('profile-name-field')), 'Bea');
     await tester.tap(find.byKey(const Key('save-profile-button')));
@@ -256,12 +260,25 @@ void main() {
   });
 
   testWidgets('shows an uncluttered empty home screen', (tester) async {
-    await tester.pumpWidget(_homeApp());
+    await tester.pumpWidget(_homeApp(clock: () => DateTime(2026, 11, 5, 12)));
     await tester.pumpAndSettle();
 
     expect(find.text('FocusPaws'), findsOneWidget);
+    expect(find.byKey(const Key('brand-logo')), findsOneWidget);
+    expect(
+      Theme.of(tester.element(find.byKey(const Key('brand-logo'))))
+          .scaffoldBackgroundColor,
+      const Color(0xFFFFF3D6),
+    );
     expect(find.byKey(const Key('open-user-profile')), findsNothing);
     expect(find.byKey(const Key('finish-day-button')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('finish-day-button')),
+        matching: find.byType(Icon),
+      ),
+      findsNothing,
+    );
     expect(
       tester.getRect(find.byKey(const Key('finish-day-button'))).center.dy,
       closeTo(tester.getRect(find.text('FocusPaws')).center.dy, 1),
@@ -271,7 +288,8 @@ void main() {
       greaterThan(tester.getRect(find.text('FocusPaws')).right),
     );
     expect(find.text('¡Hola, Alex!'), findsOneWidget);
-    expect(find.text('Kitty 🐾'), findsOneWidget);
+    expect(find.text('Hoy es jueves'), findsOneWidget);
+    expect(find.text('Soy Kitty 🐾'), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const Key('progress-pet-avatar'))).data,
       '🐱',
@@ -385,6 +403,7 @@ void main() {
         '2026-11-04': [3, 5, 8],
         '2026-11-03': [2, 4],
       },
+      lastActiveDate: '2026-11-04',
     );
 
     final restored = FocusTasksProgress.fromJson(progress.toJson());
@@ -396,6 +415,8 @@ void main() {
     expect(restored.tasks.single.hasReceivedReward, isTrue);
     expect(restored.tasks.single.estimatedMinutes, 30);
     expect(restored.dailyCompletions['2026-11-04'], [3, 5, 8]);
+    expect(restored.lastActiveDate, '2026-11-04');
+    expect(restored.pendingCarryoverTaskIds, isEmpty);
     expect(restored.stickerUnlockDates, ['2026-11-04']);
     expect(
       () => FocusTasksProgress.fromJson('{"points":-1,"tasks":[]}'),
@@ -409,6 +430,8 @@ void main() {
     expect(previousVersion.perseveranceSnacks, 0);
     expect(previousVersion.tasks.single.estimatedMinutes, 30);
     expect(previousVersion.dailyCompletions, isEmpty);
+    expect(previousVersion.lastActiveDate, isNull);
+    expect(previousVersion.pendingCarryoverTaskIds, isEmpty);
   });
 
   testWidgets('persists daily sticker unlocks and resets the daily counter', (
@@ -476,6 +499,125 @@ void main() {
     await tester.tap(find.byKey(const Key('open-sticker-album-button')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('sticker-2026-11-04')), findsOneWidget);
+  });
+
+  testWidgets(
+    'starts a new day with pending tasks and asks how to handle them',
+    (tester) async {
+      final today = DateTime(2026, 11, 5, 12);
+      final progressStore = _MemoryFocusTasksProgressStore()
+        ..progress = FocusTasksProgress(
+          tasks: const [
+            FocusTaskProgress(
+              id: 0,
+              title: 'Tarea completada ayer',
+              isCompleted: true,
+              hasReceivedReward: true,
+            ),
+            FocusTaskProgress(
+              id: 1,
+              title: 'Tarea pendiente',
+              isCompleted: false,
+              hasReceivedReward: false,
+            ),
+          ],
+          points: 20,
+          dailyCompletions: {
+            '2026-11-04': [0],
+          },
+        );
+
+      await tester.pumpWidget(
+        _homeApp(progressStore: progressStore, clock: () => today),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tarea pendiente de ayer'), findsOneWidget);
+      expect(
+        find.textContaining(
+          '¿Quieres conservarla para terminarla hoy o cancelarla?',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('0/1 tareas hechas'), findsOneWidget);
+      expect(find.text('Tarea completada ayer'), findsNothing);
+      expect(find.text('¡Misión cumplida por hoy!'), findsNothing);
+
+      await tester.tap(find.text('Conservar tarea'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tarea pendiente'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('task-1')));
+      await tester.pumpAndSettle();
+      expect(find.text('1/1 tareas hechas'), findsOneWidget);
+      expect(find.text('¡Misión cumplida por hoy!'), findsOneWidget);
+      expect(progressStore.progress.dailyCompletions['2026-11-04'], [0]);
+      expect(progressStore.progress.dailyCompletions['2026-11-05'], [1]);
+    },
+  );
+
+  testWidgets('can cancel a pending task carried over from yesterday', (
+    tester,
+  ) async {
+    final progressStore = _MemoryFocusTasksProgressStore()
+      ..progress = FocusTasksProgress(
+        tasks: const [
+          FocusTaskProgress(
+            id: 1,
+            title: 'Tarea que ya no hace falta',
+            isCompleted: false,
+            hasReceivedReward: false,
+          ),
+        ],
+        points: 0,
+        lastActiveDate: '2026-11-04',
+      );
+
+    await tester.pumpWidget(
+      _homeApp(
+        progressStore: progressStore,
+        clock: () => DateTime(2026, 11, 5, 12),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancelar tarea'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tarea que ya no hace falta'), findsNothing);
+    expect(find.text('0/0 tareas hechas'), findsOneWidget);
+    expect(find.text('¡Misión cumplida por hoy!'), findsNothing);
+    expect(progressStore.progress.tasks, isEmpty);
+  });
+
+  testWidgets('resets completed tasks at midnight without restarting', (
+    tester,
+  ) async {
+    var today = DateTime(2026, 11, 4, 23, 59);
+    final progressStore = _MemoryFocusTasksProgressStore();
+    await tester.pumpWidget(
+      _homeApp(progressStore: progressStore, clock: () => today),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Añadir una tarea'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('task-title-field')),
+      'Tarea de ayer',
+    );
+    await tester.tap(find.byKey(const Key('save-task-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('task-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('1/1 tareas hechas'), findsOneWidget);
+
+    today = DateTime(2026, 11, 5, 0, 1);
+    await tester.pump(const Duration(minutes: 2));
+    await tester.pumpAndSettle();
+
+    expect(find.text('0/0 tareas hechas'), findsOneWidget);
+    expect(find.text('Tarea de ayer'), findsNothing);
+    expect(find.text('¡Misión cumplida por hoy!'), findsNothing);
+    expect(progressStore.progress.dailyCompletions['2026-11-04'], [0]);
   });
 
   testWidgets('adds a task and lets the user mark it complete', (tester) async {
@@ -1146,6 +1288,8 @@ class _MemoryFocusTasksProgressStore implements FocusTasksProgressStore {
       bonusRestSeconds: progress.bonusRestSeconds,
       perseveranceSnacks: progress.perseveranceSnacks,
       dailyCompletions: progress.dailyCompletions,
+      lastActiveDate: progress.lastActiveDate,
+      pendingCarryoverTaskIds: progress.pendingCarryoverTaskIds,
     );
   }
 }

@@ -1,0 +1,11 @@
+flutter_native_splash:
+  color: "#FFF3D6"
+  image: assets/images/focuspaws_con_texto_splash.png
+  branding: assets/images/focuspaws_splash_branding.png
+  android_gravity: center
+  branding_mode: bottom
+  android_12:
+    color: "#FFF3D6"
+    image: assets/images/focuspaws_con_texto_android12.png
+    icon_background_color: "#FFF3D6"
+    branding: assets/images/focuspaws_splash_branding.png

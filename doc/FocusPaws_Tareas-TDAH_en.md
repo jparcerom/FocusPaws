@@ -69,9 +69,19 @@ To keep the pet system sustainable to build for the initial MVP, use simple prog
 - The project keeps the base circular PNG, safe-zone foreground, and foreground enlarged by 5% in `assets/launcher` to cover the mask edge and avoid halos. `flutter_launcher_icons.yaml` selects these assets and generates Android variants.
 - The generator adds a `<inset android:inset="16%">` to the adaptive icon by default. After running it, remove that inset from `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` so the foreground is not reduced a second time. Repeat this adjustment after regenerating resources, then build and install the app to check the actual launcher mask.
 
+### Launch screen, branding, and palette
+
+- The native launch screen uses the circular logo with wordmark from `assets/images/focuspaws_con_texto_splash.png` and the one-line bottom brand text “FocusPaws: tareas TDAH versión 1.0 por jpm”, generated in `assets/images/focuspaws_splash_branding.png`. Android 12 uses `assets/images/focuspaws_con_texto_android12.png`, scaled down so the complete logo fits inside the system's circular mask.
+- `flutter_native_splash.yaml` configures Android versions before and after Android 12; native resources are generated with `flutter_native_splash`.
+- The technical app version is `1.0.0+1` in `pubspec.yaml`; “1.0” is the product version displayed on the splash.
+- The app-wide background and launch background use pastel yellow `#FFF3D6`. The main header uses the transparent round icon without text.
+- Secondary surfaces use a light mint inspired by the logo; primary buttons use its dark teal with white text.
+
 ### Agreed task-screen refinements
 
 - The header shows **FocusPaws** and a **Finish day** button aligned to its right; profile access stays in the selector and profile hub rather than the task screen.
+- The greeting shows the selected user's name beside the current weekday. The pet progress card introduces the pet with “I am [name]”.
+- At local date rollover, completed tasks leave the active list and the daily counter resets. Pending tasks stay available, and the user is asked whether to keep them for today or cancel them.
 - The progress card omits the “Your companion today” heading and lifetime-points line. It keeps the pet's name and level, progress toward the next level, and available rewards.
 - The task section is titled **Your challenge today**, the counter uses the format **0/0 tasks completed**, and completing all tasks shows **Mission accomplished for today!**
 
@@ -260,3 +270,34 @@ The app should preserve progress between sessions and present accumulated effort
 - The Pixel 6 emulator initially has Gboard set to English (US). To type accented Spanish characters, add Spanish under Settings → System → Keyboard → On-screen keyboard → Gboard → Languages; the app does not filter accented letters.
 - We will develop the app incrementally: complete and verify each feature before moving on to the next.
 - The interface should be polished, clear, and intuitive, with particular care to reduce cognitive load and visual clutter for people with ADHD.
+
+-------------------------------------
+
+## Entering a Rest Break
+
+### 1. Rest entry flow
+
+When a user completes a task (including by tapping “I finished early!”), the app calculates the accumulated rest time and opens the Active Rest screen instead of returning to Home.
+
+The Active Rest screen includes:
+
+- **Pet in the park:** The pet appears relaxed, for example sleeping, playing with a ball, or sunbathing.
+- **Rest timer:** A circular countdown like the Focus Mode timer, in a different calming color such as green or yellow. It shows the available time and starts counting down immediately.
+
+### 2. Healthy ways to spend the time
+
+The screen offers three quick options to encourage a real break and help prevent getting lost in unrelated phone apps:
+
+- **Physical walk (away from the screen):** Invite the user to leave the phone on the table and suggest a short physical activity based on the available time, for example: “You have 5 minutes: go drink a glass of water and stretch your legs.”
+- **Care for your pet (in-app interaction):** Let the user pet or clean the pet, or play a simple Fidget mini-game such as popping bubbles or dragging a finger to leave paw prints. Each minute spent interacting improves the pet's stored mood.
+- **Controlled free mode:** If the user leaves the app to do something else, keep the timer running in the background through a persistent Android notification.
+
+### 3. Ending the break
+
+When the rest timer reaches zero:
+
+1. **Friendly alert:** Vibrate and play a gentle, non-jarring sound.
+2. **Pet message:** Show a pop-up with the pet awake and refreshed: “I had so much fun! My batteries are at 100%. Shall we do another mission together?”
+3. **Direct return:** An affirmative action navigates straight to Home and shows pending tasks so the user can readily start the next one.
+
+-------------------------------------

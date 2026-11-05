@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, listEquals;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -26,6 +26,16 @@ String _localDateKey(DateTime date) =>
     '${date.month.toString().padLeft(2, '0')}-'
     '${date.day.toString().padLeft(2, '0')}';
 
+String _spanishWeekday(DateTime date) => const [
+  'lunes',
+  'martes',
+  'miércoles',
+  'jueves',
+  'viernes',
+  'sábado',
+  'domingo',
+][date.weekday - 1];
+
 class FocusPawsApp extends StatelessWidget {
   const FocusPawsApp({
     super.key,
@@ -46,9 +56,13 @@ class FocusPawsApp extends StatelessWidget {
   final bool startWithSelectedProfile;
   final bool? allowMultipleProfiles;
 
-  static const _forest = Color(0xFF28644F);
+  static const _forest = Color(0xFF006B70);
   static const _ink = Color(0xFF1E3029);
-  static const _canvas = Color(0xFFF7F8F4);
+  static const _canvas = Color(0xFFFFF3D6);
+  static const _mint = Color(0xFFE5F7F3);
+  static const _mintDeep = Color(0xFFD3F0EA);
+  static const _mintBorder = Color(0xFFBBDDD6);
+  static const _mintSurface = Color(0xFFF0FAF8);
 
   @override
   Widget build(BuildContext context) {
@@ -352,12 +366,15 @@ class FocusTasksProgress {
     this.bonusRestSeconds = 0,
     this.perseveranceSnacks = 0,
     Map<String, List<int>> dailyCompletions = const {},
+    this.lastActiveDate,
+    List<int> pendingCarryoverTaskIds = const [],
   }) : tasks = List.unmodifiable(tasks),
        dailyCompletions = Map.unmodifiable(
          dailyCompletions.map(
            (date, taskIds) => MapEntry(date, List<int>.unmodifiable(taskIds)),
          ),
-       ) {
+       ),
+       pendingCarryoverTaskIds = List.unmodifiable(pendingCarryoverTaskIds) {
     if (points < 0) throw ArgumentError.value(points, 'points');
     if (bonusRestSeconds < 0) {
       throw ArgumentError.value(bonusRestSeconds, 'bonusRestSeconds');
@@ -379,6 +396,20 @@ class FocusTasksProgress {
         throw ArgumentError.value(entry.value, 'dailyCompletions');
       }
     }
+    if (lastActiveDate != null) {
+      final date = DateTime.tryParse(lastActiveDate!);
+      if (date == null || _localDateKey(date) != lastActiveDate) {
+        throw ArgumentError.value(lastActiveDate, 'lastActiveDate');
+      }
+    }
+    if (this.pendingCarryoverTaskIds.any((id) => id < 0) ||
+        this.pendingCarryoverTaskIds.toSet().length !=
+            this.pendingCarryoverTaskIds.length) {
+      throw ArgumentError.value(
+        pendingCarryoverTaskIds,
+        'pendingCarryoverTaskIds',
+      );
+    }
   }
 
   final List<FocusTaskProgress> tasks;
@@ -386,6 +417,8 @@ class FocusTasksProgress {
   final int bonusRestSeconds;
   final int perseveranceSnacks;
   final Map<String, List<int>> dailyCompletions;
+  final String? lastActiveDate;
+  final List<int> pendingCarryoverTaskIds;
 
   List<String> get stickerUnlockDates =>
       dailyCompletions.entries
@@ -403,6 +436,8 @@ class FocusTasksProgress {
     bonusRestSeconds: 0,
     perseveranceSnacks: 0,
     dailyCompletions: {},
+    lastActiveDate: null,
+    pendingCarryoverTaskIds: [],
   );
 
   const FocusTasksProgress._({
@@ -411,6 +446,8 @@ class FocusTasksProgress {
     required this.bonusRestSeconds,
     required this.perseveranceSnacks,
     required this.dailyCompletions,
+    required this.lastActiveDate,
+    required this.pendingCarryoverTaskIds,
   });
 
   factory FocusTasksProgress.fromJson(String json) {
@@ -423,7 +460,14 @@ class FocusTasksProgress {
         (value['perseveranceSnacks'] != null &&
             value['perseveranceSnacks'] is! int) ||
         (value['dailyCompletions'] != null &&
-            value['dailyCompletions'] is! Map<String, dynamic>)) {
+            value['dailyCompletions'] is! Map<String, dynamic>) ||
+        (value['lastActiveDate'] != null &&
+            value['lastActiveDate'] is! String) ||
+        (value['pendingCarryoverTaskIds'] != null &&
+            (value['pendingCarryoverTaskIds'] is! List<Object?> ||
+                (value['pendingCarryoverTaskIds'] as List<Object?>).any(
+                  (id) => id is! int,
+                )))) {
       throw const FormatException('Invalid saved task progress.');
     }
 
@@ -451,6 +495,10 @@ class FocusTasksProgress {
         bonusRestSeconds: value['bonusRestSeconds'] as int? ?? 0,
         perseveranceSnacks: value['perseveranceSnacks'] as int? ?? 0,
         dailyCompletions: dailyCompletions,
+        lastActiveDate: value['lastActiveDate'] as String?,
+        pendingCarryoverTaskIds:
+            (value['pendingCarryoverTaskIds'] as List<Object?>? ?? [])
+                .cast<int>(),
       );
     } on ArgumentError {
       throw const FormatException('Invalid saved task progress.');
@@ -462,6 +510,8 @@ class FocusTasksProgress {
     'bonusRestSeconds': bonusRestSeconds,
     'perseveranceSnacks': perseveranceSnacks,
     'dailyCompletions': dailyCompletions,
+    'lastActiveDate': lastActiveDate,
+    'pendingCarryoverTaskIds': pendingCarryoverTaskIds,
     'tasks': tasks.map((task) => task.toJson()).toList(),
   });
 }
@@ -800,6 +850,8 @@ class _UserTasksPageState extends State<_UserTasksPage>
   Duration _bonusRest = Duration.zero;
   int _perseveranceSnacks = 0;
   Map<String, Set<int>> _dailyCompletions = {};
+  String? _lastActiveDate;
+  final List<int> _pendingCarryoverTaskIds = [];
   late final AnimationController _levelUpController;
   late Future<FocusTasksProgress> _progressFuture;
   Future<void> _pendingProgressSave = Future<void>.value();
@@ -807,6 +859,7 @@ class _UserTasksPageState extends State<_UserTasksPage>
   bool _showAllPendingTasks = false;
   bool _showCompletedTasks = false;
   Timer? _dailyResetTimer;
+  bool _isPromptingCarryoverTasks = false;
 
   int get _completedCount => _tasks.where((task) => task.isCompleted).length;
   String get _todayKey => _localDateKey(widget.clock());
@@ -845,8 +898,9 @@ class _UserTasksPageState extends State<_UserTasksPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      setState(() {});
+      _advanceToCurrentDay();
       _scheduleDailyRefresh();
+      _scheduleCarryoverPrompt();
     }
   }
 
@@ -858,7 +912,7 @@ class _UserTasksPageState extends State<_UserTasksPage>
       nextDay.difference(now) + const Duration(seconds: 1),
       () {
         if (!mounted) return;
-        setState(() {});
+        _advanceToCurrentDay();
         _scheduleDailyRefresh();
       },
     );
@@ -929,6 +983,8 @@ class _UserTasksPageState extends State<_UserTasksPage>
         for (final entry in _dailyCompletions.entries)
           entry.key: entry.value.toList()..sort(),
       },
+      lastActiveDate: _lastActiveDate ?? _todayKey,
+      pendingCarryoverTaskIds: _pendingCarryoverTaskIds,
     );
     _pendingProgressSave = _pendingProgressSave
         .catchError((Object _) {})
@@ -950,10 +1006,34 @@ class _UserTasksPageState extends State<_UserTasksPage>
   }
 
   void _restoreProgress(FocusTasksProgress progress) {
+    final today = _todayKey;
+    final lastRecordedCompletionDate = progress.dailyCompletions.keys.toList()
+      ..sort();
+    final previousActiveDate =
+        progress.lastActiveDate ??
+        (lastRecordedCompletionDate.isEmpty
+            ? null
+            : lastRecordedCompletionDate.last);
+    final isNewDay =
+        previousActiveDate != null && previousActiveDate.compareTo(today) < 0;
+    final isLegacyProgressWithoutDate =
+        progress.lastActiveDate == null && previousActiveDate == null;
+    final completedToday = progress.dailyCompletions[today]?.toSet() ?? <int>{};
+    final hasLegacyCompletedTasks =
+        isLegacyProgressWithoutDate &&
+        progress.tasks.any(
+          (task) => task.isCompleted && !completedToday.contains(task.id),
+        );
+    final restoredTasks = progress.tasks.where((task) {
+      if (!task.isCompleted) return true;
+      if (isNewDay) return false;
+      return !isLegacyProgressWithoutDate || completedToday.contains(task.id);
+    }).toList();
+
     _tasks
       ..clear()
       ..addAll(
-        progress.tasks.map(
+        restoredTasks.map(
           (task) => FocusTask(
             id: task.id,
             title: task.title,
@@ -974,6 +1054,119 @@ class _UserTasksPageState extends State<_UserTasksPage>
       for (final entry in progress.dailyCompletions.entries)
         entry.key: entry.value.toSet(),
     };
+    _lastActiveDate = today;
+    _pendingCarryoverTaskIds
+      ..clear()
+      ..addAll(
+        progress.pendingCarryoverTaskIds.where(
+          (id) => _tasks.any((task) => task.id == id && !task.isCompleted),
+        ),
+      );
+    if (isNewDay || hasLegacyCompletedTasks) {
+      _pendingCarryoverTaskIds
+        ..clear()
+        ..addAll(
+          _tasks.where((task) => !task.isCompleted).map((task) => task.id),
+        );
+    }
+
+    if (progress.lastActiveDate != today ||
+        isNewDay ||
+        isLegacyProgressWithoutDate ||
+        !listEquals(
+          progress.pendingCarryoverTaskIds,
+          _pendingCarryoverTaskIds,
+        ) ||
+        progress.tasks.length != _tasks.length) {
+      _persistProgress();
+    }
+    _scheduleCarryoverPrompt();
+  }
+
+  void _advanceToCurrentDay() {
+    final today = _todayKey;
+    final lastActiveDate = _lastActiveDate;
+    if (!_hasRestoredProgress ||
+        lastActiveDate == null ||
+        lastActiveDate.compareTo(today) >= 0) {
+      return;
+    }
+
+    setState(() {
+      _tasks.removeWhere((task) => task.isCompleted);
+      _pendingCarryoverTaskIds
+        ..clear()
+        ..addAll(_tasks.map((task) => task.id));
+      _lastActiveDate = today;
+    });
+    _persistProgress();
+    _scheduleCarryoverPrompt();
+  }
+
+  void _scheduleCarryoverPrompt() {
+    if (_isPromptingCarryoverTasks || _pendingCarryoverTaskIds.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isPromptingCarryoverTasks) return;
+      _promptCarryoverTasks();
+    });
+  }
+
+  Future<void> _promptCarryoverTasks() async {
+    _isPromptingCarryoverTasks = true;
+    try {
+      while (mounted && _pendingCarryoverTaskIds.isNotEmpty) {
+        final taskId = _pendingCarryoverTaskIds.first;
+        FocusTask? task;
+        for (final candidate in _tasks) {
+          if (candidate.id == taskId) {
+            task = candidate;
+            break;
+          }
+        }
+
+        if (task == null || task.isCompleted) {
+          setState(() => _pendingCarryoverTaskIds.remove(taskId));
+          _persistProgress();
+          continue;
+        }
+
+        final shouldCancel = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => PopScope(
+            canPop: false,
+            child: AlertDialog(
+              title: const Text('Tarea pendiente de ayer'),
+              content: Text(
+                'Ayer quedó pendiente «${task!.title}». '
+                '¿Quieres conservarla para terminarla hoy o cancelarla?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Conservar tarea'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Cancelar tarea'),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (!mounted || shouldCancel == null) return;
+
+        setState(() {
+          if (shouldCancel) {
+            _tasks.removeWhere((candidate) => candidate.id == taskId);
+          }
+          _pendingCarryoverTaskIds.remove(taskId);
+        });
+        _persistProgress();
+      }
+    } finally {
+      _isPromptingCarryoverTasks = false;
+    }
   }
 
   void _toggleTask(FocusTask task, bool isCompleted) {
@@ -992,6 +1185,7 @@ class _UserTasksPageState extends State<_UserTasksPage>
     var leveledUp = false;
     setState(() {
       task.isCompleted = true;
+      _pendingCarryoverTaskIds.remove(task.id);
       _dailyCompletions.putIfAbsent(_todayKey, () => <int>{}).add(task.id);
       if (!task.hasReceivedReward) {
         final previousLevel = PetProgress.fromTotalPoints(_earnedPoints).level;
@@ -1066,11 +1260,9 @@ class _UserTasksPageState extends State<_UserTasksPage>
             Row(
               children: [
                 Expanded(child: const _BrandHeader()),
-                FilledButton.icon(
+                FilledButton(
                   key: const Key('finish-day-button'),
                   onPressed: _finishDay,
-                  icon: const Icon(Icons.exit_to_app_rounded),
-                  label: const Text('Finalizar día'),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(0, 42),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1079,11 +1271,12 @@ class _UserTasksPageState extends State<_UserTasksPage>
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  child: const Text('Finalizar día'),
                 ),
               ],
             ),
             const SizedBox(height: 28),
-            _PersonalGreeting(profile: profile),
+            _PersonalGreeting(profile: profile, today: widget.clock()),
             const SizedBox(height: 24),
             _PetCard(
               earnedPoints: _earnedPoints,
@@ -1287,13 +1480,15 @@ class _AccountLauncher extends StatelessWidget {
               ),
             ),
           if (onCreate != null)
-            OutlinedButton.icon(
+            FilledButton.icon(
               key: const Key('create-profile-button'),
               onPressed: onCreate,
               icon: const Icon(Icons.person_add_alt_1_rounded),
               label: const Text('Crear otro usuario'),
-              style: OutlinedButton.styleFrom(
+              style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(56),
+                backgroundColor: FocusPawsApp._forest,
+                foregroundColor: Colors.white,
                 textStyle: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
@@ -1527,7 +1722,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFFE5F1E9), Color(0xFFD8EBDD)],
+                  colors: [FocusPawsApp._mint, FocusPawsApp._mintDeep],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -1539,7 +1734,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     width: 76,
                     height: 76,
                     decoration: const BoxDecoration(
-                      color: Color(0xFFF7F8F4),
+                      color: FocusPawsApp._mintSurface,
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
@@ -1605,16 +1800,16 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   prefixIcon: const Icon(Icons.person_outline_rounded),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                    borderSide: BorderSide(color: FocusPawsApp._mintBorder),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                    borderSide: BorderSide(color: FocusPawsApp._mintBorder),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(
-                      color: Color(0xFF28644F),
+                      color: FocusPawsApp._forest,
                       width: 1.5,
                     ),
                   ),
@@ -1654,15 +1849,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     selected: isSelected,
                     label: avatar.label,
                     child: Material(
-                      color: isSelected
-                          ? const Color(0xFFE4F0E8)
-                          : Colors.white,
+                      color: isSelected ? FocusPawsApp._mint : Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18),
                         side: BorderSide(
                           color: isSelected
-                              ? const Color(0xFF28644F)
-                              : const Color(0xFFE3E9E3),
+                              ? FocusPawsApp._forest
+                              : FocusPawsApp._mintBorder,
                           width: isSelected ? 2 : 1,
                         ),
                       ),
@@ -1879,9 +2072,10 @@ class _ProfileErrorScreen extends StatelessWidget {
 }
 
 class _PersonalGreeting extends StatelessWidget {
-  const _PersonalGreeting({required this.profile});
+  const _PersonalGreeting({required this.profile, required this.today});
 
   final UserProfile profile;
+  final DateTime today;
 
   @override
   Widget build(BuildContext context) {
@@ -1891,15 +2085,30 @@ class _PersonalGreeting extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '¡Hola, ${profile.name}!',
-                key: const Key('personal-greeting'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                ),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 2,
+                children: [
+                  Text(
+                    '¡Hola, ${profile.name}!',
+                    key: const Key('personal-greeting'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  Text(
+                    'Hoy es ${_spanishWeekday(today)}',
+                    key: const Key('current-weekday'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: const Color(0xFF52685B),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -2367,7 +2576,7 @@ class _FocusSessionPageState extends State<FocusSessionPage>
                   key: const Key('focus-zen-state'),
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE5F1E9),
+                    color: FocusPawsApp._mint,
                     borderRadius: BorderRadius.circular(28),
                   ),
                   child: Column(
@@ -2407,12 +2616,12 @@ class _FocusSessionPageState extends State<FocusSessionPage>
                             key: const Key('focus-timer-progress'),
                             value: progress,
                             strokeWidth: 17,
-                            backgroundColor: const Color(0xFFDCE8DF),
+                            backgroundColor: FocusPawsApp._mintDeep,
                             color: isMicroPause
                                 ? const Color(0xFFE9A72B)
                                 : isOvertimeCountdown
                                 ? const Color(0xFFE9A72B)
-                                : const Color(0xFF28644F),
+                                : FocusPawsApp._forest,
                             strokeCap: StrokeCap.round,
                           ),
                         ),
@@ -2609,7 +2818,7 @@ class _FocusSessionPageState extends State<FocusSessionPage>
                   key: const Key('focus-reward-points'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: const Color(0xFF28644F),
+                    color: FocusPawsApp._forest,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -2685,17 +2894,13 @@ class _BrandHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
+        SizedBox(
           width: 42,
           height: 42,
-          decoration: BoxDecoration(
-            color: const Color(0xFFE4F0E8),
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: const Icon(
-            Icons.pets_rounded,
-            color: Color(0xFF28644F),
-            size: 23,
+          child: Image.asset(
+            'assets/launcher/focuspaws_sin_texto_1024.png',
+            key: const Key('brand-logo'),
+            fit: BoxFit.contain,
           ),
         ),
         const SizedBox(width: 11),
@@ -2732,7 +2937,7 @@ class _PetCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFFE5F1E9), Color(0xFFD8EBDD)],
+          colors: [FocusPawsApp._mint, FocusPawsApp._mintDeep],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -2748,7 +2953,7 @@ class _PetCard extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        '${avatar.petName} 🐾',
+                        'Soy ${avatar.petName} 🐾',
                         key: const Key('progress-pet-name'),
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.headlineSmall
@@ -2803,8 +3008,8 @@ class _PetCard extends StatelessWidget {
                           key: const Key('pet-level-progress'),
                           value: progress.progress,
                           minHeight: 8,
-                          backgroundColor: const Color(0xFFB8D3C0),
-                          color: const Color(0xFF28644F),
+                          backgroundColor: FocusPawsApp._mintDeep,
+                          color: FocusPawsApp._forest,
                           semanticsLabel: 'Progreso de ${avatar.petName}',
                         ),
                       ),
@@ -2880,7 +3085,7 @@ class _DailyStickerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: const Color(0xFFEAF2EB),
+    color: FocusPawsApp._mint,
     borderRadius: BorderRadius.circular(20),
     child: InkWell(
       key: const Key('open-sticker-album-button'),
@@ -3023,9 +3228,9 @@ class StickerAlbumPage extends StatelessWidget {
                     return Container(
                       key: Key('sticker-$date'),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEAF2EB),
+                        color: FocusPawsApp._mint,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFD8E6DA)),
+                        border: Border.all(color: FocusPawsApp._mintBorder),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -3131,7 +3336,7 @@ class _PetAvatar extends StatelessWidget {
                   width: 82,
                   height: 82,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF7F8F4).withValues(alpha: 0.8),
+                    color: FocusPawsApp._mintSurface.withValues(alpha: 0.8),
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
@@ -3148,12 +3353,9 @@ class _PetAvatar extends StatelessWidget {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF28644F),
+                    color: FocusPawsApp._forest,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFFD8EBDD),
-                      width: 2,
-                    ),
+                    border: Border.all(color: FocusPawsApp._mint, width: 2),
                   ),
                   alignment: Alignment.center,
                   child: Text(
@@ -3218,7 +3420,7 @@ class _EmptyTasksCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE8ECE7)),
+        border: Border.all(color: FocusPawsApp._mintBorder),
       ),
       child: Column(
         children: [
@@ -3226,7 +3428,7 @@ class _EmptyTasksCard extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: const BoxDecoration(
-              color: Color(0xFFF0F4EF),
+              color: FocusPawsApp._mintSurface,
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.spa_outlined, color: Color(0xFF527261)),
@@ -3265,7 +3467,7 @@ class _TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(18),
-      side: const BorderSide(color: Color(0xFFE8ECE7)),
+      side: BorderSide(color: FocusPawsApp._mintBorder),
     );
 
     return Material(
@@ -3284,7 +3486,7 @@ class _TaskCard extends StatelessWidget {
           tooltip: 'Iniciar foco: ${task.title}',
           onPressed: task.isCompleted ? null : onStart,
           icon: const Icon(Icons.play_circle_fill_rounded),
-          color: const Color(0xFF28644F),
+          color: FocusPawsApp._forest,
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         title: Text(
@@ -3302,7 +3504,7 @@ class _TaskCard extends StatelessWidget {
           '+${task.size.points} pts',
           style: const TextStyle(color: Color(0xFF64756D)),
         ),
-        activeColor: const Color(0xFF28644F),
+        activeColor: FocusPawsApp._forest,
         shape: shape,
       ),
     );
@@ -3347,10 +3549,10 @@ class _TaskSizeButton extends StatelessWidget {
       key: Key('task-size-${size.name}'),
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        backgroundColor: selected ? const Color(0xFFE5F1E9) : Colors.white,
-        foregroundColor: const Color(0xFF28644F),
+        backgroundColor: selected ? FocusPawsApp._mint : Colors.white,
+        foregroundColor: FocusPawsApp._forest,
         side: BorderSide(
-          color: selected ? const Color(0xFF28644F) : const Color(0xFFDCE4DC),
+          color: selected ? FocusPawsApp._forest : FocusPawsApp._mintBorder,
           width: selected ? 1.5 : 1,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
@@ -3619,7 +3821,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Material(
-        color: const Color(0xFFF7F8F4),
+        color: FocusPawsApp._mintSurface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
@@ -3633,7 +3835,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                     width: 38,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD3DCD5),
+                      color: FocusPawsApp._mintBorder,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -3690,23 +3892,23 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                       style: IconButton.styleFrom(
                         foregroundColor: _isListening
                             ? const Color(0xFFB34343)
-                            : const Color(0xFF28644F),
+                            : FocusPawsApp._forest,
                       ),
                     ),
                     filled: true,
                     fillColor: Colors.white,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                      borderSide: BorderSide(color: FocusPawsApp._mintBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: Color(0xFFDCE4DC)),
+                      borderSide: BorderSide(color: FocusPawsApp._mintBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: const BorderSide(
-                        color: Color(0xFF28644F),
+                        color: FocusPawsApp._forest,
                         width: 1.5,
                       ),
                     ),
@@ -3749,7 +3951,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                       key: const Key('voice-status-message'),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: _isListening
-                            ? const Color(0xFF28644F)
+                            ? FocusPawsApp._forest
                             : const Color(0xFF64756D),
                       ),
                     ),

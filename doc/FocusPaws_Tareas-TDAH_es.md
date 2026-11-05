@@ -65,9 +65,19 @@ Para que el sistema de la mascota funcione y sea sostenible para ti a nivel de d
 - El proyecto conserva en `assets/launcher` el PNG circular base, el foreground con zona segura y la variante de foreground ampliada un 5 % para cubrir la máscara y evitar halos. `flutter_launcher_icons.yaml` selecciona estos recursos y genera las variantes Android.
 - El generador añade por defecto un `<inset android:inset="16%">` al icono adaptativo. Después de ejecutarlo, se elimina ese inset de `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` para que no reduzca por segunda vez el foreground. Si se regeneran los recursos, hay que repetir este ajuste y compilar e instalar la app para revisar la máscara real del launcher.
 
+### Pantalla de inicio, marca y paleta
+
+- La pantalla nativa de lanzamiento usa el logotipo circular con texto de `assets/images/focuspaws_con_texto_splash.png` y la marca inferior «FocusPaws: tareas TDAH versión 1.0 por jpm» en una sola línea, generada en `assets/images/focuspaws_splash_branding.png`. Android 12 usa la variante `assets/images/focuspaws_con_texto_android12.png`, reducida para que el logo completo quepa dentro de la máscara circular del sistema.
+- La configuración para Android anterior y posterior a Android 12 está en `flutter_native_splash.yaml`; los recursos nativos se generan con `flutter_native_splash`.
+- La versión técnica actual es `1.0.0+1` en `pubspec.yaml`; «1.0» es la versión de producto que se muestra en el splash.
+- El fondo general de la aplicación y el fondo de inicio usan el amarillo pastel `#FFF3D6`. La cabecera principal utiliza el icono redondo sin texto con su fondo transparente.
+- Los fondos secundarios usan un verde menta claro inspirado en el logotipo y los botones principales usan su verde azulado oscuro con texto blanco.
+
 ### Ajustes acordados a la pantalla de tareas
 
 - La cabecera muestra «FocusPaws» y el botón «Finalizar día» alineado a su derecha; el acceso al perfil se mantiene en el selector y su panel, no en la pantalla de tareas.
+- El saludo junto al nombre del perfil indica el día de la semana actual. La tarjeta de progreso identifica a la mascota con «Soy [nombre]».
+- Al cambiar la fecha local, las tareas completadas del día anterior salen de la lista activa y el contador diario vuelve a cero. Las tareas pendientes se conservan; se pregunta si se quieren mantener para terminarlas hoy o cancelarlas.
 - La tarjeta de progreso omite el encabezado «Tu compañero de hoy» y la línea de puntos totales. Conserva el nombre y nivel de la mascota, el progreso al siguiente nivel y las recompensas disponibles.
 - La sección de tareas se titula «Tu reto del día», el contador usa el formato «0/0 tareas hechas» y al completar todo se muestra «¡Misión cumplida por hoy!».
 
@@ -290,3 +300,32 @@ Vamos a dejarlo preparado para que cuando esté la aplicación desarrollada comp
 • El emulador Pixel 6 tiene Gboard configurado inicialmente en inglés (EE. UU.). Para escribir con tildes, añade español en Ajustes → Sistema → Teclado → Teclado en pantalla → Gboard → Idiomas; la aplicación no filtra las letras acentuadas.
 • Desarrollaremos la aplicación de forma incremental: completaremos y verificaremos cada funcionalidad antes de pasar a la siguiente.
 • La interfaz debe ser cuidada, clara e intuitiva, con especial atención a reducir la carga cognitiva y la saturación visual para las personas con TDAH.
+
+-------------------------------------
+
+## Entrada al descanso
+
+1. El Flujo de Entrada al Descanso
+
+Cuando el usuario termina una tarea (o pulsa "¡Terminé antes!"), el sistema calcula los minutos de descanso acumulados. En lugar de mandarlo a la pantalla de inicio, la aplicación abre automáticamente la Pantalla de Descanso Activo.
+
+Estructura de la Pantalla de Descanso:
+
+• La Mascota en el Parque: Visualmente, tu mascota aparece relajada (durmiendo, jugando con una pelota o tomando el sol).
+• El Contador de Descanso: Un temporizador circular (igual que el del Modo Foco, pero de otro color, por ejemplo, un verde relajante o amarillo) que muestra los minutos que tiene disponibles y empieza a contar en reversa de inmediato.
+
+2. ¿Cómo se "gasta" el tiempo de forma sana? (El menú anti-procrastinación)
+
+Para evitar que el usuario cierre la app y se pierda en TikTok, la pantalla de descanso debe ofrecerle alternativas de desconexión real dentro o fuera de la pantalla. Te sugiero incluir tres botones rápidos:
+• Opción A: "El Paseo Físico" (Fuera de la pantalla): La app le invita a dejar el móvil en la mesa. Le propone retos físicos cortos según el tiempo que tenga: "Tienes 5 minutos: ve a beber un vaso de agua y estira las piernas".
+• Opción B: "Mimar a tu Mascota" (Gamificación dentro de la app): El usuario puede usar sus minutos para interactuar con la mascota. Por ejemplo, dar toques en la pantalla para acariciarla, limpiarla o jugar al minijuego Fidget de burbujas (un juego para explotar burbujas en la pantalla), otro juego sería el de arrastrar el dedo por la pantalla y van saliendo huellas, que comentábamos antes. Cada minuto gastado aquí mejora el humor de la mascota en la base de datos.
+• Opción C: "Modo Libre Controlado": Si el usuario decide salir de la app para mirar otra cosa, el temporizador sigue corriendo en segundo plano a través de una Notificación Permanente en la barra de Android.
+
+3. La Regla de Oro: El fin del descanso (Cierre del bucle)
+
+¿Qué pasa cuando el tiempo de descanso llega a cero? Este es el momento más crítico en el TDAH. Necesitamos un estímulo claro para volver:
+1. Alarma Amistosa: El móvil vibra y suena un sonido suave (no estridente, para no generar rechazo).
+2. Mensaje de la Mascota: Aparece una ventana emergente con la mascota ya despierta y con energía renovada: "¡Me lo he pasado genial! Mis baterías están al 100%. ¿Hacemos otra misión patitas juntos?"
+3. Redirección Directa: Al pulsar el botón de aceptar, la app lo redirige directamente a la pantalla principal, mostrando las tareas pendientes para que la inercia le invite a pulsar el siguiente botón de "Play" sin pensar.
+
+-----------------------------------
