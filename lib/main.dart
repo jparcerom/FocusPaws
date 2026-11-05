@@ -2003,20 +2003,29 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
               child: Column(
                 children: [
-                  Container(
-                    width: 76,
-                    height: 76,
-                    decoration: const BoxDecoration(
-                      color: FocusPawsApp._mintSurface,
-                      shape: BoxShape.circle,
+                  if (widget.initialProfile == null)
+                    Image.asset(
+                      'assets/images/focuspaws_logo_circular.png',
+                      key: const Key('profile-welcome-logo'),
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.contain,
+                    )
+                  else
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: const BoxDecoration(
+                        color: FocusPawsApp._mintSurface,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.pets_rounded,
+                        size: 40,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.pets_rounded,
-                      size: 40,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
                   const SizedBox(height: 16),
                   Text(
                     widget.editNameOnly

@@ -15,6 +15,16 @@ void main() {
 
     expect(find.text('FocusPaws'), findsOneWidget);
     expect(find.text('¡Qué bueno tenerte aquí!'), findsOneWidget);
+    final welcomeLogo = tester.widget<Image>(
+      find.byKey(const Key('profile-welcome-logo')),
+    );
+    expect(
+      (welcomeLogo.image as AssetImage).assetName,
+      'assets/images/focuspaws_logo_circular.png',
+    );
+    expect(find.byIcon(Icons.pets_rounded), findsNothing);
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
     expect(find.byType(GridView), findsOneWidget);
     expect(UserAvatar.values, hasLength(6));
     for (final avatar in UserAvatar.values) {

@@ -16,7 +16,7 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 
 ### Perfiles
 
-- El onboarding permite elegir nombre y uno de seis animales, dispuestos en dos filas de tres; el perfil se guarda localmente. El saludo muestra el nombre y el día de la semana, y el animal seleccionado aparece en el recuadro de progreso: Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) o Panda.
+- El onboarding muestra el logotipo redondo y transparente de FocusPaws con el nombre integrado (recortado del mismo recurso circular del splash de Android 12 para quitar el margen transparente sobrante) y permite elegir un nombre y uno de seis animales, dispuestos en dos filas de tres; el perfil se guarda localmente. El saludo muestra el nombre y el día de la semana, y el animal seleccionado aparece en el recuadro de progreso: Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) o Panda.
 - Al volver a abrir la aplicación aparece un selector de perfiles. Cada perfil da acceso a un panel intermedio para editar el nombre o el animalito, abrir su álbum y entrar a sus tareas. «Finalizar día» vuelve al selector sin borrar tareas ni recompensas.
 - Crear perfiles adicionales está disponible en desarrollo y puede habilitarse en una compilación con `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; en release se muestra solo el perfil gratuito predeterminado. Cada perfil conserva su progreso separado.
 

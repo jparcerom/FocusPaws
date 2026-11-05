@@ -16,7 +16,7 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 
 ### Profiles
 
-- Onboarding lets users choose a name and one of six animals in a two-row, three-column grid; the profile is saved locally. The greeting shows the person's name and current weekday, and the selected animal appears in the progress card: Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), or Panda.
+- Onboarding displays the round, transparent FocusPaws logo with its name (cropped from the same circular Android 12 splash asset to remove excess transparent padding) and lets users choose a name and one of six animals in a two-row, three-column grid; the profile is saved locally. The greeting shows the person's name and current weekday, and the selected animal appears in the progress card: Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), or Panda.
 - Reopening the app shows a profile selector. Each profile opens an intermediate hub for editing its name or pet, opening its album, and entering its tasks. **Finish day** returns to the selector without deleting tasks or rewards.
 - Creating additional profiles is available in development and can be enabled in a build with `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; release builds show only the default free profile. Each profile keeps its progress separate.
 

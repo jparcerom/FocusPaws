@@ -66,6 +66,7 @@ flutter:
   assets:
     - assets/images/focuspaws_con_texto_splash.png
     - assets/images/focuspaws_con_texto_android12.png
+    - assets/images/focuspaws_logo_circular.png
     - assets/images/focuspaws_splash_branding.png
     - assets/launcher/focuspaws_sin_texto_1024.png
 
