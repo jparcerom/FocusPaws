@@ -44,10 +44,10 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 
 ### Entrada al descanso
 
-- El comportamiento previsto para el descanso activo está detallado en «Entrada al descanso» en la especificación del producto. Tras completar una tarea, la app debe abrir una pantalla de descanso con temporizador circular en cuenta atrás y una mascota relajada.
-- La pantalla debe ofrecer un paseo físico con sugerencias breves, interacción con la mascota y modo libre controlado con temporizador y notificación permanente al salir de la app.
-- Al terminar el descanso, debe avisar con vibración y sonido suave, mostrar un mensaje de la mascota y ofrecer volver directamente a las tareas pendientes.
-- El saldo de descanso ya se acumula y se muestra; la pantalla activa, las actividades, la notificación y el cierre del descanso están pendientes de implementación.
+- Al completar una tarea desde el foco (o marcarla terminada) se canjea automáticamente el saldo acumulado y se abre el descanso activo. El temporizador circular empieza de inmediato y su hora de fin se guarda para reanudarlo si se cierra y vuelve a abrir la app.
+- Se puede elegir un paseo con sugerencias físicas, interactuar con la mascota (cada minuto mejora su humor persistido) o activar el modo libre. Este último mantiene una notificación permanente de Android y programa un aviso al finalizar aunque la app esté en segundo plano.
+- Al terminar, la aplicación cancela las notificaciones, reproduce una vibración y un sonido breves, muestra el mensaje de la mascota y vuelve directamente a las tareas pendientes.
+- El saldo se consume al iniciar el descanso. La mascota se representa por ahora con su emoji y un indicador de que está descansando; quedan pendientes las ilustraciones y animaciones específicas del parque descrito en la propuesta.
 
 ## Pendiente para alinear con el documento
 
@@ -55,7 +55,6 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 - Completar la celebración de recompensa con confeti y sonido.
 - Revisar la presentación y los estados de ánimo/energía de la mascota frente a la propuesta visual.
 - Evaluar el aviso sutil al salir de la app durante el foco, respetando permisos y comportamiento del sistema.
-- Implementar el flujo de descanso activo especificado en «Entrada al descanso».
 
 ## Punto de reanudación
 
@@ -63,7 +62,9 @@ El tamaño de tarea ya determina el temporizador y la recompensa, incluidos el l
 
 **Validación de esta iteración:** `flutter analyze` sin incidencias, todas las pruebas de `flutter test` aprobadas y APK debug compilado, instalado y abierto en `emulator-5554`.
 
-**Siguiente paso:** implementar el flujo de descanso activo especificado en «Entrada al descanso»: temporizador, actividades, modo libre con notificación y retorno a las tareas pendientes.
+**Pausa para pruebas:** el flujo de descanso activo está implementado y cubierto por pruebas automatizadas. Se pausa aquí el desarrollo para que el usuario pruebe el comportamiento en el dispositivo/emulador, especialmente el permiso de notificaciones, el modo libre en segundo plano y el aviso al finalizar. Al reanudar, recoger primero los resultados de esas pruebas antes de cambiar el flujo.
+
+**Siguiente paso tras las pruebas:** corregir cualquier incidencia observada; después avanzar con las ilustraciones y animaciones de la mascota.
 
 **Decisión pendiente:** el documento propone que la mascota pierda algo de energía al abandonar, pero no define cuánto ni cómo se calcula. No implementar esa penalización hasta acordar su comportamiento.
 

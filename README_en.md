@@ -44,10 +44,10 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 
 ### Entering a rest break
 
-- The planned active-rest behavior is specified in “Entering a Rest Break” in the product brief. After a task is completed, the app should open an active-rest screen with a circular countdown timer and a relaxed pet.
-- The screen should offer a short physical-walk suggestion, pet interaction, and controlled free mode with a running timer and persistent notification while the app is backgrounded.
-- At the end of the break, the app should use a gentle sound and vibration, show a message from the pet, and offer a direct return to pending tasks.
-- Bonus rest already accumulates and is displayed; the active screen, activities, notification, and break completion flow remain to be implemented.
+- Completing a task through focus (or marking it complete) automatically redeems the accumulated balance and opens the active-rest screen. Its circular countdown starts immediately, and the end time is saved so the break can resume if the app is closed and reopened.
+- Users can choose a physical-walk suggestion, interact with the pet (each full minute improves its persisted mood), or activate controlled free mode. Free mode keeps an ongoing Android notification and schedules an end alert even while the app is backgrounded.
+- At the end, the app cancels the notifications, plays a brief vibration and sound, shows the pet's message, and returns directly to pending tasks.
+- The balance is consumed when the break starts. The pet is currently represented by its emoji and a resting indicator; dedicated park illustrations and animations from the proposal remain to be created.
 
 ## Remaining work to align with the product brief
 
@@ -55,7 +55,6 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 - Complete the reward celebration with pet animation, confetti, and sound.
 - Review the pet's visual presentation and mood/energy states against the proposal.
 - Evaluate a subtle notification when the app is backgrounded during focus, respecting permissions and system behavior.
-- Implement the active-rest flow specified in “Entering a Rest Break”.
 
 ## Resumption point
 
@@ -63,7 +62,9 @@ Task size now determines the focus timer and reward, including the 50% threshold
 
 **Validation for this iteration:** `flutter analyze` reported no issues, all `flutter test` tests passed, and the debug APK was built, installed, and launched on `emulator-5554`.
 
-**Next step:** implement the active-rest flow specified in “Entering a Rest Break”: timer, break activities, free mode with notification, and return to pending tasks.
+**Paused for user testing:** the active-rest flow is implemented and covered by automated tests. Development is paused here so the user can test it on a device/emulator, especially notification permission, free mode in the background, and the end alert. When resuming, collect those test results before changing the flow.
+
+**Next step after testing:** address any observed issues, then develop dedicated pet illustrations and animations.
 
 **Pending decision:** the product brief suggests that the pet loses some energy when a user abandons a session, but does not define how much or how it should be calculated. Do not implement that penalty until its behavior is agreed.
 

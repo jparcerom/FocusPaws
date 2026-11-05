@@ -404,6 +404,14 @@ void main() {
         '2026-11-03': [2, 4],
       },
       lastActiveDate: '2026-11-04',
+      activeRestEndTimeMillis: DateTime(
+        2026,
+        11,
+        4,
+        12,
+        5,
+      ).millisecondsSinceEpoch,
+      petMoodMinutes: 9,
     );
 
     final restored = FocusTasksProgress.fromJson(progress.toJson());
@@ -417,6 +425,11 @@ void main() {
     expect(restored.dailyCompletions['2026-11-04'], [3, 5, 8]);
     expect(restored.lastActiveDate, '2026-11-04');
     expect(restored.pendingCarryoverTaskIds, isEmpty);
+    expect(
+      restored.activeRestEndTimeMillis,
+      DateTime(2026, 11, 4, 12, 5).millisecondsSinceEpoch,
+    );
+    expect(restored.petMoodMinutes, 9);
     expect(restored.stickerUnlockDates, ['2026-11-04']);
     expect(
       () => FocusTasksProgress.fromJson('{"points":-1,"tasks":[]}'),
@@ -432,6 +445,103 @@ void main() {
     expect(previousVersion.dailyCompletions, isEmpty);
     expect(previousVersion.lastActiveDate, isNull);
     expect(previousVersion.pendingCarryoverTaskIds, isEmpty);
+    expect(previousVersion.activeRestEndTimeMillis, isNull);
+    expect(previousVersion.petMoodMinutes, 0);
+    expect(
+      () => FocusTasksProgress.fromJson(
+        '{"points":0,"petMoodMinutes":-1,"tasks":[]}',
+      ),
+      throwsFormatException,
+    );
+  });
+
+  testWidgets('resumes an active rest timer after reopening the app', (
+    tester,
+  ) async {
+    final now = DateTime(2026, 11, 5, 12);
+    final progressStore = _MemoryFocusTasksProgressStore()
+      ..progress = FocusTasksProgress(
+        tasks: const [],
+        points: 0,
+        lastActiveDate: '2026-11-05',
+        activeRestEndTimeMillis: now
+            .add(const Duration(seconds: 90))
+            .millisecondsSinceEpoch,
+      );
+
+    await tester.pumpWidget(
+      _homeApp(progressStore: progressStore, clock: () => now),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActiveRestBreakPage), findsOneWidget);
+    expect(find.text('01:30'), findsOneWidget);
+  });
+
+  testWidgets('spends accumulated rest time in the active-rest flow', (
+    tester,
+  ) async {
+    var now = DateTime(2026, 11, 5, 12);
+    final progressStore = _MemoryFocusTasksProgressStore()
+      ..progress = FocusTasksProgress(
+        tasks: const [
+          FocusTaskProgress(
+            id: 8,
+            title: 'Ordenar el escritorio',
+            isCompleted: false,
+            hasReceivedReward: false,
+          ),
+        ],
+        points: 0,
+        bonusRestSeconds: 180,
+      );
+    final notificationService = _MemoryRestBreakNotificationService();
+
+    await tester.pumpWidget(
+      _homeApp(
+        progressStore: progressStore,
+        clock: () => now,
+        restBreakNotificationService: notificationService,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('task-8')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActiveRestBreakPage), findsOneWidget);
+    expect(find.text('03:00'), findsOneWidget);
+    expect(progressStore.progress.bonusRestSeconds, 0);
+    expect(
+      progressStore.progress.activeRestEndTimeMillis,
+      now.add(const Duration(minutes: 3)).millisecondsSinceEpoch,
+    );
+
+    final petActivity = find.byKey(const Key('rest-activity-pet'));
+    await _scrollToFinder(tester, petActivity);
+    await tester.tap(petActivity);
+    await tester.pumpAndSettle();
+    now = now.add(const Duration(minutes: 1));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Minutos felices: 1'), findsOneWidget);
+    expect(progressStore.progress.petMoodMinutes, 1);
+
+    final freeActivity = find.byKey(const Key('rest-activity-free'));
+    await _scrollToFinder(tester, freeActivity);
+    await tester.tap(freeActivity);
+    await tester.pumpAndSettle();
+    expect(notificationService.shownTimers, 1);
+    expect(
+      find.text(
+        'Al terminar, recibirás una notificación para volver a tus tareas.',
+      ),
+      findsOneWidget,
+    );
+    final physicalActivity = find.byKey(const Key('rest-activity-physical'));
+    await _scrollToFinder(tester, physicalActivity);
+    await tester.tap(physicalActivity);
+    await tester.pumpAndSettle();
+    expect(notificationService.cancelledTimers, 1);
   });
 
   testWidgets('persists daily sticker unlocks and resets the daily counter', (
@@ -726,11 +836,15 @@ void main() {
   testWidgets('completes a focus block and grants its reward only once', (
     tester,
   ) async {
+    var now = DateTime(2026, 11, 5, 12);
     final progressStore = _MemoryFocusTasksProgressStore();
+    final notificationService = _MemoryRestBreakNotificationService();
     await tester.pumpWidget(
       _homeApp(
         progressStore: progressStore,
         focusDuration: const Duration(minutes: 20),
+        clock: () => now,
+        restBreakNotificationService: notificationService,
       ),
     );
     await tester.pumpAndSettle();
@@ -773,9 +887,22 @@ void main() {
     await tester.tap(find.byKey(const Key('focus-reward-continue-button')));
     await tester.pumpAndSettle();
 
+    expect(find.byType(ActiveRestBreakPage), findsOneWidget);
+    expect(find.text('07:00'), findsOneWidget);
+    expect(progressStore.progress.activeRestEndTimeMillis, isNotNull);
+    expect(progressStore.progress.bonusRestSeconds, 0);
+    now = now.add(const Duration(minutes: 7));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('¡Descanso terminado!'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('rest-finished-continue-button')));
+    await tester.pumpAndSettle();
+
     expect(find.text('1/1 tareas hechas'), findsOneWidget);
-    expect(find.text('Descanso +7 min'), findsOneWidget);
-    expect(progressStore.progress.bonusRestSeconds, 420);
+    expect(progressStore.progress.bonusRestSeconds, 0);
+    expect(progressStore.progress.activeRestEndTimeMillis, isNull);
     expect(find.byKey(const ValueKey('task-0')), findsNothing);
 
     final toggleCompleted = find.byKey(const Key('toggle-completed-tasks'));
@@ -1197,6 +1324,7 @@ Widget _homeApp({
   Duration focusDuration = const Duration(minutes: 25),
   Duration overtimeBlockDuration = const Duration(minutes: 5),
   FocusTasksProgressStore? progressStore,
+  RestBreakNotificationService? restBreakNotificationService,
   DateTime Function()? clock,
 }) => FocusPawsApp(
   profileStore: _MemoryUserProfileStore(
@@ -1207,6 +1335,8 @@ Widget _homeApp({
   overtimeBlockDuration: overtimeBlockDuration,
   clock: clock ?? DateTime.now,
   startWithSelectedProfile: true,
+  restBreakNotificationService:
+      restBreakNotificationService ?? _MemoryRestBreakNotificationService(),
 );
 
 Future<void> _scrollToFinder(WidgetTester tester, Finder finder) async {
@@ -1290,7 +1420,27 @@ class _MemoryFocusTasksProgressStore implements FocusTasksProgressStore {
       dailyCompletions: progress.dailyCompletions,
       lastActiveDate: progress.lastActiveDate,
       pendingCarryoverTaskIds: progress.pendingCarryoverTaskIds,
+      activeRestEndTimeMillis: progress.activeRestEndTimeMillis,
+      petMoodMinutes: progress.petMoodMinutes,
     );
+  }
+}
+
+class _MemoryRestBreakNotificationService
+    implements RestBreakNotificationService {
+  bool permissionGranted = true;
+  int shownTimers = 0;
+  int cancelledTimers = 0;
+
+  @override
+  Future<bool> showRestTimer(DateTime endsAt) async {
+    shownTimers++;
+    return permissionGranted;
+  }
+
+  @override
+  Future<void> cancelRestTimer() async {
+    cancelledTimers++;
   }
 }
 

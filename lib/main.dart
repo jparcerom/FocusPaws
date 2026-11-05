@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode, listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 void main() {
   runApp(const FocusPawsApp());
@@ -46,6 +50,7 @@ class FocusPawsApp extends StatelessWidget {
     this.clock = DateTime.now,
     this.startWithSelectedProfile = false,
     this.allowMultipleProfiles,
+    this.restBreakNotificationService,
   });
 
   final UserProfileStore? profileStore;
@@ -96,8 +101,112 @@ class FocusPawsApp extends StatelessWidget {
         clock: clock,
         startWithSelectedProfile: startWithSelectedProfile,
         allowMultipleProfiles: allowMultipleProfiles,
+        restBreakNotificationService:
+            restBreakNotificationService ??
+            AndroidRestBreakNotificationService(),
       ),
     );
+  }
+
+  final RestBreakNotificationService? restBreakNotificationService;
+}
+
+abstract interface class RestBreakNotificationService {
+  Future<bool> showRestTimer(DateTime endsAt);
+  Future<void> cancelRestTimer();
+}
+
+class AndroidRestBreakNotificationService
+    implements RestBreakNotificationService {
+  AndroidRestBreakNotificationService({FlutterLocalNotificationsPlugin? plugin})
+    : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+
+  static const _notificationId = 7021;
+  static const _completionNotificationId = 7022;
+  static const _channelId = 'active_rest_break';
+  static const _completionChannelId = 'active_rest_break_finished';
+  final FlutterLocalNotificationsPlugin _plugin;
+  bool _isInitialized = false;
+
+  Future<void> _initialize() async {
+    if (_isInitialized) return;
+    await _plugin.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('ic_launcher'),
+      ),
+    );
+    _isInitialized = true;
+  }
+
+  @override
+  Future<bool> showRestTimer(DateTime endsAt) async {
+    await _initialize();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    final permissionGranted =
+        await android?.requestNotificationsPermission() ?? false;
+    if (!permissionGranted) return false;
+
+    try {
+      await _plugin.zonedSchedule(
+        id: _completionNotificationId,
+        scheduledDate: tz.TZDateTime.from(endsAt, tz.UTC),
+        title: '¡Descanso terminado!',
+        body: 'Tu mascota te espera para volver a tus tareas.',
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _completionChannelId,
+            'Fin del descanso',
+            channelDescription: 'Aviso amable al terminar el descanso',
+            importance: Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+            playSound: true,
+            enableVibration: true,
+            vibrationPattern: Int64List.fromList([0, 180, 120, 180]),
+            autoCancel: true,
+            category: AndroidNotificationCategory.reminder,
+          ),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: endsAt.millisecondsSinceEpoch.toString(),
+      );
+      await _plugin.show(
+        id: _notificationId,
+        title: 'Descanso FocusPaws',
+        body: 'Tu descanso sigue en marcha',
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId,
+            'Descanso activo',
+            channelDescription: 'Temporizador del descanso activo',
+            importance: Importance.low,
+            priority: Priority.low,
+            ongoing: true,
+            autoCancel: false,
+            onlyAlertOnce: true,
+            playSound: false,
+            enableVibration: false,
+            when: endsAt.millisecondsSinceEpoch,
+            usesChronometer: true,
+            chronometerCountDown: true,
+            category: AndroidNotificationCategory.stopwatch,
+          ),
+        ),
+        payload: endsAt.millisecondsSinceEpoch.toString(),
+      );
+    } on Exception {
+      await cancelRestTimer();
+      rethrow;
+    }
+    return true;
+  }
+
+  @override
+  Future<void> cancelRestTimer() async {
+    await _plugin.cancel(id: _notificationId);
+    await _plugin.cancel(id: _completionNotificationId);
   }
 }
 
@@ -368,6 +477,8 @@ class FocusTasksProgress {
     Map<String, List<int>> dailyCompletions = const {},
     this.lastActiveDate,
     List<int> pendingCarryoverTaskIds = const [],
+    this.activeRestEndTimeMillis,
+    this.petMoodMinutes = 0,
   }) : tasks = List.unmodifiable(tasks),
        dailyCompletions = Map.unmodifiable(
          dailyCompletions.map(
@@ -381,6 +492,9 @@ class FocusTasksProgress {
     }
     if (perseveranceSnacks < 0) {
       throw ArgumentError.value(perseveranceSnacks, 'perseveranceSnacks');
+    }
+    if (petMoodMinutes < 0) {
+      throw ArgumentError.value(petMoodMinutes, 'petMoodMinutes');
     }
     final ids = tasks.map((task) => task.id).toSet();
     if (ids.length != tasks.length) {
@@ -419,6 +533,8 @@ class FocusTasksProgress {
   final Map<String, List<int>> dailyCompletions;
   final String? lastActiveDate;
   final List<int> pendingCarryoverTaskIds;
+  final int? activeRestEndTimeMillis;
+  final int petMoodMinutes;
 
   List<String> get stickerUnlockDates =>
       dailyCompletions.entries
@@ -438,6 +554,8 @@ class FocusTasksProgress {
     dailyCompletions: {},
     lastActiveDate: null,
     pendingCarryoverTaskIds: [],
+    activeRestEndTimeMillis: null,
+    petMoodMinutes: 0,
   );
 
   const FocusTasksProgress._({
@@ -448,6 +566,8 @@ class FocusTasksProgress {
     required this.dailyCompletions,
     required this.lastActiveDate,
     required this.pendingCarryoverTaskIds,
+    required this.activeRestEndTimeMillis,
+    required this.petMoodMinutes,
   });
 
   factory FocusTasksProgress.fromJson(String json) {
@@ -467,7 +587,12 @@ class FocusTasksProgress {
             (value['pendingCarryoverTaskIds'] is! List<Object?> ||
                 (value['pendingCarryoverTaskIds'] as List<Object?>).any(
                   (id) => id is! int,
-                )))) {
+                ))) ||
+        (value['activeRestEndTimeMillis'] != null &&
+            value['activeRestEndTimeMillis'] is! int) ||
+        (value['petMoodMinutes'] != null &&
+            (value['petMoodMinutes'] is! int ||
+                (value['petMoodMinutes'] as int) < 0))) {
       throw const FormatException('Invalid saved task progress.');
     }
 
@@ -499,6 +624,8 @@ class FocusTasksProgress {
         pendingCarryoverTaskIds:
             (value['pendingCarryoverTaskIds'] as List<Object?>? ?? [])
                 .cast<int>(),
+        activeRestEndTimeMillis: value['activeRestEndTimeMillis'] as int?,
+        petMoodMinutes: value['petMoodMinutes'] as int? ?? 0,
       );
     } on ArgumentError {
       throw const FormatException('Invalid saved task progress.');
@@ -512,6 +639,8 @@ class FocusTasksProgress {
     'dailyCompletions': dailyCompletions,
     'lastActiveDate': lastActiveDate,
     'pendingCarryoverTaskIds': pendingCarryoverTaskIds,
+    'activeRestEndTimeMillis': activeRestEndTimeMillis,
+    'petMoodMinutes': petMoodMinutes,
     'tasks': tasks.map((task) => task.toJson()).toList(),
   });
 }
@@ -562,6 +691,7 @@ class _UserTasksPage extends StatefulWidget {
     super.key,
     required this.profile,
     required this.progressStore,
+    required this.restBreakNotificationService,
     required this.onEndDay,
     this.focusDuration,
     this.overtimeBlockDuration = const Duration(minutes: 5),
@@ -570,6 +700,7 @@ class _UserTasksPage extends StatefulWidget {
 
   final UserProfile profile;
   final FocusTasksProgressStore progressStore;
+  final RestBreakNotificationService restBreakNotificationService;
   final VoidCallback onEndDay;
   final Duration? focusDuration;
   final Duration overtimeBlockDuration;
@@ -584,6 +715,7 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.profileStore,
     required this.progressStore,
+    required this.restBreakNotificationService,
     this.focusDuration,
     this.overtimeBlockDuration = const Duration(minutes: 5),
     this.clock = DateTime.now,
@@ -593,6 +725,7 @@ class HomePage extends StatefulWidget {
 
   final UserProfileStore profileStore;
   final FocusTasksProgressStore progressStore;
+  final RestBreakNotificationService restBreakNotificationService;
   final Duration? focusDuration;
   final Duration overtimeBlockDuration;
   final DateTime Function() clock;
@@ -822,6 +955,7 @@ class _HomePageShellState extends State<HomePage> {
             key: ValueKey(profile.id),
             profile: profile,
             progressStore: widget.progressStore,
+            restBreakNotificationService: widget.restBreakNotificationService,
             focusDuration: widget.focusDuration,
             overtimeBlockDuration: widget.overtimeBlockDuration,
             clock: widget.clock,
@@ -848,7 +982,9 @@ class _UserTasksPageState extends State<_UserTasksPage>
   int _nextTaskId = 0;
   int _earnedPoints = 0;
   Duration _bonusRest = Duration.zero;
+  DateTime? _activeRestEndsAt;
   int _perseveranceSnacks = 0;
+  int _petMoodMinutes = 0;
   Map<String, Set<int>> _dailyCompletions = {};
   String? _lastActiveDate;
   final List<int> _pendingCarryoverTaskIds = [];
@@ -860,6 +996,7 @@ class _UserTasksPageState extends State<_UserTasksPage>
   bool _showCompletedTasks = false;
   Timer? _dailyResetTimer;
   bool _isPromptingCarryoverTasks = false;
+  bool _isOpeningRest = false;
 
   int get _completedCount => _tasks.where((task) => task.isCompleted).length;
   String get _todayKey => _localDateKey(widget.clock());
@@ -985,6 +1122,8 @@ class _UserTasksPageState extends State<_UserTasksPage>
       },
       lastActiveDate: _lastActiveDate ?? _todayKey,
       pendingCarryoverTaskIds: _pendingCarryoverTaskIds,
+      activeRestEndTimeMillis: _activeRestEndsAt?.millisecondsSinceEpoch,
+      petMoodMinutes: _petMoodMinutes,
     );
     _pendingProgressSave = _pendingProgressSave
         .catchError((Object _) {})
@@ -1049,6 +1188,12 @@ class _UserTasksPageState extends State<_UserTasksPage>
     );
     _earnedPoints = progress.points;
     _bonusRest = Duration(seconds: progress.bonusRestSeconds);
+    _activeRestEndsAt = progress.activeRestEndTimeMillis == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(
+            progress.activeRestEndTimeMillis!,
+          );
+    _petMoodMinutes = progress.petMoodMinutes;
     _perseveranceSnacks = progress.perseveranceSnacks;
     _dailyCompletions = {
       for (final entry in progress.dailyCompletions.entries)
@@ -1081,6 +1226,7 @@ class _UserTasksPageState extends State<_UserTasksPage>
       _persistProgress();
     }
     _scheduleCarryoverPrompt();
+    _scheduleRestResume();
   }
 
   void _advanceToCurrentDay() {
@@ -1104,11 +1250,88 @@ class _UserTasksPageState extends State<_UserTasksPage>
   }
 
   void _scheduleCarryoverPrompt() {
-    if (_isPromptingCarryoverTasks || _pendingCarryoverTaskIds.isEmpty) return;
+    if (_activeRestEndsAt != null ||
+        _isPromptingCarryoverTasks ||
+        _pendingCarryoverTaskIds.isEmpty) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isPromptingCarryoverTasks) return;
       _promptCarryoverTasks();
     });
+  }
+
+  void _scheduleRestResume() {
+    if (_activeRestEndsAt == null || _isOpeningRest) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isOpeningRest && _activeRestEndsAt != null) {
+        _openRestIfAvailable();
+      }
+    });
+  }
+
+  Future<void> _openRestIfAvailable() async {
+    if (!mounted || _isOpeningRest) return;
+    final navigator = Navigator.of(context);
+    var endsAt = _activeRestEndsAt;
+    if (endsAt == null) {
+      if (_bonusRest <= Duration.zero) return;
+      final restDuration = _bonusRest;
+      endsAt = widget.clock().add(restDuration);
+      setState(() {
+        _activeRestEndsAt = endsAt;
+        _bonusRest = Duration.zero;
+      });
+      final messenger = ScaffoldMessenger.of(context);
+      _persistProgress();
+      try {
+        await _pendingProgressSave;
+      } on Exception {
+        if (!mounted) return;
+        setState(() {
+          _bonusRest += restDuration;
+          _activeRestEndsAt = null;
+        });
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo guardar el inicio del descanso. Inténtalo de nuevo.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    _isOpeningRest = true;
+    await navigator.push<void>(
+      MaterialPageRoute<void>(
+        builder: (context) => ActiveRestBreakPage(
+          endsAt: endsAt!,
+          pet: widget.profile.avatar,
+          petName: widget.profile.avatar.petName,
+          clock: widget.clock,
+          notificationService: widget.restBreakNotificationService,
+          onPetMoodMinute: _recordPetMoodMinute,
+          onFinished: _finishRestBreak,
+        ),
+      ),
+    );
+    _isOpeningRest = false;
+    if (mounted && _activeRestEndsAt == null) _scheduleCarryoverPrompt();
+  }
+
+  void _recordPetMoodMinute() {
+    if (!mounted) return;
+    setState(() => _petMoodMinutes++);
+    _persistProgress();
+  }
+
+  void _finishRestBreak() {
+    if (!mounted) return;
+    setState(() => _activeRestEndsAt = null);
+    _persistProgress();
   }
 
   Future<void> _promptCarryoverTasks() async {
@@ -1169,9 +1392,10 @@ class _UserTasksPageState extends State<_UserTasksPage>
     }
   }
 
-  void _toggleTask(FocusTask task, bool isCompleted) {
+  Future<void> _toggleTask(FocusTask task, bool isCompleted) async {
     if (isCompleted && !task.isCompleted) {
       _completeTask(task);
+      await _openRestIfAvailable();
       return;
     }
 
@@ -1209,8 +1433,8 @@ class _UserTasksPageState extends State<_UserTasksPage>
   }
 
   Future<void> _startFocus(FocusTask task, UserAvatar avatar) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
+    final result = await Navigator.of(context).push<FocusSessionResult>(
+      MaterialPageRoute<FocusSessionResult>(
         builder: (context) => FocusSessionPage(
           taskTitle: task.title,
           avatar: avatar,
@@ -1221,6 +1445,7 @@ class _UserTasksPageState extends State<_UserTasksPage>
         ),
       ),
     );
+    if (result != null) await _openRestIfAvailable();
   }
 
   @override
@@ -2182,6 +2407,432 @@ class PetProgress {
   double get progress => pointsInLevel / pointsRequired;
 }
 
+enum _RestActivity { physical, pet, free }
+
+class ActiveRestBreakPage extends StatefulWidget {
+  const ActiveRestBreakPage({
+    super.key,
+    required this.endsAt,
+    required this.pet,
+    required this.petName,
+    required this.clock,
+    required this.notificationService,
+    required this.onPetMoodMinute,
+    required this.onFinished,
+  });
+
+  final DateTime endsAt;
+  final UserAvatar pet;
+  final String petName;
+  final DateTime Function() clock;
+  final RestBreakNotificationService notificationService;
+  final VoidCallback onPetMoodMinute;
+  final VoidCallback onFinished;
+
+  @override
+  State<ActiveRestBreakPage> createState() => _ActiveRestBreakPageState();
+}
+
+class _ActiveRestBreakPageState extends State<ActiveRestBreakPage>
+    with WidgetsBindingObserver {
+  Timer? _ticker;
+  late Duration _remaining;
+  late final Duration _totalDuration;
+  _RestActivity _activity = _RestActivity.physical;
+  DateTime? _petActivityStartedAt;
+  int _recordedPetMinutes = 0;
+  int _petMoodMinutesThisSession = 0;
+  int _petTaps = 0;
+  bool _isFinishing = false;
+  bool _canExit = false;
+  AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _totalDuration = widget.endsAt.difference(widget.clock());
+    _refreshRemaining();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      _refreshRemaining();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    if (state == AppLifecycleState.resumed) _refreshRemaining();
+  }
+
+  void _refreshRemaining() {
+    final remaining = widget.endsAt.difference(widget.clock());
+    _recordCompletedPetMinutes();
+    if (remaining <= Duration.zero) {
+      _remaining = Duration.zero;
+      _ticker?.cancel();
+      _finishBreak();
+      return;
+    }
+    if (mounted) setState(() => _remaining = remaining);
+  }
+
+  void _recordCompletedPetMinutes() {
+    final startedAt = _petActivityStartedAt;
+    if (_activity != _RestActivity.pet || startedAt == null) return;
+    final completedMinutes = widget.clock().difference(startedAt).inMinutes;
+    while (_recordedPetMinutes < completedMinutes) {
+      _recordedPetMinutes++;
+      _petMoodMinutesThisSession++;
+      widget.onPetMoodMinute();
+    }
+  }
+
+  void _selectActivity(_RestActivity activity) {
+    if (activity == _activity) return;
+    final wasFreeMode = _activity == _RestActivity.free;
+    _recordCompletedPetMinutes();
+    setState(() {
+      _activity = activity;
+      _petActivityStartedAt = activity == _RestActivity.pet
+          ? widget.clock()
+          : null;
+      _recordedPetMinutes = 0;
+    });
+    if (wasFreeMode && activity != _RestActivity.free) {
+      unawaited(_disableFreeMode());
+    }
+    if (activity == _RestActivity.free) _enableFreeMode();
+  }
+
+  Future<void> _enableFreeMode() async {
+    try {
+      final permissionGranted = await widget.notificationService.showRestTimer(
+        widget.endsAt,
+      );
+      if (!mounted || _activity != _RestActivity.free) {
+        await widget.notificationService.cancelRestTimer();
+        return;
+      }
+      if (!permissionGranted) {
+        setState(() => _activity = _RestActivity.physical);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Permite las notificaciones para usar el modo libre.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on Exception catch (error) {
+      if (!mounted) return;
+      if (_activity == _RestActivity.free) {
+        setState(() => _activity = _RestActivity.physical);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo activar el modo libre: $error'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _disableFreeMode() async {
+    try {
+      await widget.notificationService.cancelRestTimer();
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo cerrar el aviso del modo libre: $error'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _finishBreak() async {
+    if (_isFinishing) return;
+    _isFinishing = true;
+    _ticker?.cancel();
+    try {
+      await widget.notificationService.cancelRestTimer();
+    } on Exception catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo cerrar el aviso del descanso: $error'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+    if (!mounted) return;
+    if (_lifecycleState == AppLifecycleState.resumed) {
+      unawaited(_playFinishFeedback());
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('¡Descanso terminado!'),
+          content: Text(
+            '¡Me lo he pasado genial! Mis baterías están al 100%. '
+            '¿Hacemos otra misión patitas juntos?',
+          ),
+          actions: [
+            FilledButton(
+              key: const Key('rest-finished-continue-button'),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Volver a mis tareas'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    widget.onFinished();
+    setState(() => _canExit = true);
+    Navigator.of(context).pop();
+  }
+
+  Future<void> _playFinishFeedback() async {
+    try {
+      await HapticFeedback.mediumImpact();
+      await SystemSound.play(SystemSoundType.alert);
+    } on PlatformException catch (error) {
+      if (mounted) _showFeedbackError(error);
+    } on MissingPluginException catch (error) {
+      if (mounted) _showFeedbackError(error);
+    }
+  }
+
+  void _showFeedbackError(Object error) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('No se pudo reproducir el aviso del descanso: $error'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  String get _formattedRemaining {
+    final minutes = _remaining.inMinutes;
+    final seconds = _remaining.inSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}';
+  }
+
+  String get _physicalSuggestion {
+    final minutes = _remaining.inMinutes;
+    if (minutes <= 5) {
+      return 'Tienes $minutes minutos: ve a beber un vaso de agua y estira '
+          'las piernas.';
+    }
+    if (minutes <= 8) {
+      return 'Da un paseo corto, respira aire fresco y vuelve con calma.';
+    }
+    return 'Si puedes, sal a caminar unos minutos. ¡Mover el cuerpo ayuda!';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _totalDuration <= Duration.zero
+        ? 0.0
+        : (_remaining.inMicroseconds / _totalDuration.inMicroseconds).clamp(
+            0.0,
+            1.0,
+          );
+    return PopScope(
+      canPop: _canExit,
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('Descanso activo'),
+          centerTitle: true,
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+            children: [
+              Center(
+                child: Text(
+                  'Tu mascota descansa en el parque mientras tú recargas '
+                  'energía.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Center(
+                child: SizedBox(
+                  width: 218,
+                  height: 218,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox.expand(
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 13,
+                          strokeCap: StrokeCap.round,
+                          backgroundColor: const Color(0xFFD3F0EA),
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                widget.pet.emoji,
+                                style: const TextStyle(fontSize: 44),
+                              ),
+                              const SizedBox(width: 4),
+                              const Column(
+                                children: [
+                                  Text('💤', style: TextStyle(fontSize: 20)),
+                                  Text(
+                                    'descansando',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _formattedRemaining,
+                            key: const Key('rest-countdown'),
+                            style: Theme.of(context).textTheme.displaySmall
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const Text('para volver a tus tareas'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '¿Cómo quieres descansar?',
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    key: const Key('rest-activity-physical'),
+                    label: const Text('Paseo físico'),
+                    selected: _activity == _RestActivity.physical,
+                    onSelected: (_) => _selectActivity(_RestActivity.physical),
+                  ),
+                  ChoiceChip(
+                    key: const Key('rest-activity-pet'),
+                    label: const Text('Jugar con mi mascota'),
+                    selected: _activity == _RestActivity.pet,
+                    onSelected: (_) => _selectActivity(_RestActivity.pet),
+                  ),
+                  ChoiceChip(
+                    key: const Key('rest-activity-free'),
+                    label: const Text('Modo libre'),
+                    selected: _activity == _RestActivity.free,
+                    onSelected: (_) => _selectActivity(_RestActivity.free),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Card(
+                color: const Color(0xFFE5F7F3),
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: switch (_activity) {
+                    _RestActivity.physical => _buildPhysicalRest(context),
+                    _RestActivity.pet => _buildPetInteraction(context),
+                    _RestActivity.free => _buildFreeRest(context),
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhysicalRest(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Un pequeño movimiento ayuda a recargar energía.',
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      Text(_physicalSuggestion),
+    ],
+  );
+
+  Widget _buildPetInteraction(BuildContext context) => Column(
+    children: [
+      Text(
+        'Dedica un momento a ${widget.petName}. Cada minuto de compañía '
+        'mejora su humor.',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 10),
+      Text(
+        'Minutos felices: $_petMoodMinutesThisSession',
+        key: const Key('rest-pet-mood-minutes'),
+      ),
+      const SizedBox(height: 8),
+      FilledButton.tonal(
+        key: const Key('rest-pet-interact-button'),
+        onPressed: () => setState(() => _petTaps++),
+        child: Text(
+          '${_petTaps == 0 ? 'Acariciar' : '¡Otra caricia!'} '
+          '${widget.pet.emoji}',
+        ),
+      ),
+    ],
+  );
+
+  Widget _buildFreeRest(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Puedes usar el móvil o hacer otra actividad. El temporizador '
+        'sigue activo.',
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        'Al terminar, recibirás una notificación para volver a tus tareas.',
+      ),
+    ],
+  );
+}
+
 enum _FocusSessionPhase {
   focusing,
   paused,
@@ -2871,7 +3522,7 @@ class _FocusSessionPageState extends State<FocusSessionPage>
                   key: const Key('focus-reward-continue-button'),
                   onPressed: () {
                     widget.onRewardContinue(result);
-                    Navigator.of(context).pop();
+                    Navigator.of(context).pop(result);
                   },
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
