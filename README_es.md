@@ -14,11 +14,17 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 - En la cabecera de la pantalla principal se muestra el icono circular sin texto, con transparencia, junto a FocusPaws.
 - Las notificaciones de descanso usan el recurso `ic_launcher_foreground` existente en Android.
 
+## Versiones y mantenimiento
+
+- La etiqueta Git `version-prueba-v1.0.0` identifica la versión de prueba gratuita completa descrita en este documento y sirve de base estable.
+- La versión de prueba no recibirá funcionalidades nuevas. Solo se modificará para corregir errores, manteniendo separadas esas correcciones del desarrollo de la versión completa.
+- La rama `version-completa` parte de esa misma base. Las nuevas funcionalidades pendientes se desarrollarán en ella sin alterar la versión de prueba.
+
 ### Perfiles
 
 - El onboarding muestra el logotipo redondo y transparente de FocusPaws con el nombre integrado (recortado del mismo recurso circular del splash de Android 12 para quitar el margen transparente sobrante) y permite elegir un nombre y uno de seis animales, dispuestos en dos filas de tres; el perfil se guarda localmente. El saludo muestra el nombre y el día de la semana, y el animal seleccionado aparece en el recuadro de progreso: Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) o Panda.
 - Al volver a abrir la aplicación aparece un selector de perfiles. Cada perfil da acceso a un panel intermedio para editar el nombre o el animalito, abrir su álbum y entrar a sus tareas. «Finalizar día» vuelve al selector sin borrar tareas ni recompensas.
-- Crear perfiles adicionales está disponible en desarrollo y puede habilitarse en una compilación con `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; en release se muestra solo el perfil gratuito predeterminado. Cada perfil conserva su progreso separado.
+- La versión gratuita permite un perfil y muestra el progreso diario en Inicio; no muestra la habitación ni el álbum de pegatinas. En el primer inicio aparecen una sola vez una bienvenida que presenta FocusPaws para personas con TDAH y neurodivergentes, y un aviso con estas limitaciones. Los perfiles adicionales y el álbum se pueden previsualizar durante el desarrollo y habilitar en compilaciones con `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true` y `--dart-define=FOCUSPAWS_PREMIUM_STICKER_ALBUM=true`. En release ambas opciones están desactivadas por defecto, así que `flutter build apk --release` genera la versión gratuita sin banderas adicionales; el progreso y los datos de otros perfiles no se borran.
 
 ### Tareas y pantalla principal
 
@@ -40,7 +46,7 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 
 - El temporizador visual usa la duración estimada de la tarea, no muestra una cuenta numérica y permite pausar/reanudar. Incluye una micro-pausa de 2 minutos que vuelve al foco automáticamente.
 - El saldo de descanso y los snacks se muestran junto al progreso de la mascota. La tarjeta muestra nivel y progreso hacia el siguiente nivel, no los puntos totales acumulados. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180; y los niveles 6 a 8, 210. El requisito aumenta 30 puntos cada tres niveles.
-- El progreso diario cuenta tareas distintas completadas en la fecha local. Al completar tres en un día se desbloquea una pegatina; el historial y el álbum persisten junto al resto del progreso. El álbum está visible durante el desarrollo y preparado para ocultarse mediante una bandera, manteniendo el progreso diario en Inicio. El cambio de día se detecta aunque la app permanezca abierta o se vuelva a abrir.
+- El progreso diario cuenta tareas distintas completadas en la fecha local. Al completar tres en un día se desbloquea una pegatina; el historial y el álbum persisten junto al resto del progreso. La versión gratuita mantiene visible el progreso diario en Inicio, pero oculta la habitación y el álbum. El cambio de día se detecta aunque la app permanezca abierta o se vuelva a abrir.
 - El nombre y el animal se guardan por perfil. Las tareas, puntos, tiempo de descanso, snacks, caricias e historial diario se guardan en un registro independiente por perfil. Al actualizar, los datos existentes se migran al perfil anterior sin mezclar el progreso de usuarios nuevos.
 
 ### Entrada al descanso
@@ -55,7 +61,7 @@ Aplicación móvil en Flutter para ayudar a personas con TDAH a organizar tareas
 
 ## Pendiente para alinear con el documento
 
-- Integrar el acceso de pago por usuario para crear perfiles adicionales; ahora se controla mediante una bandera de compilación.
+- Integrar compras y acceso de pago para perfiles adicionales y habitación/álbum; por ahora se controlan mediante banderas de compilación (`FOCUSPAWS_PREMIUM_MULTIUSER` y `FOCUSPAWS_PREMIUM_STICKER_ALBUM`).
 - Completar la celebración de recompensa con confeti y sonido.
 - Revisar la presentación y los estados de ánimo/energía de la mascota frente a la propuesta visual.
 - Evaluar el aviso sutil al salir de la app durante el foco, respetando permisos y comportamiento del sistema.

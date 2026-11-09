@@ -4,7 +4,7 @@ Productivity apps on the market (such as Notion or Todoist) often fail people wi
 
 - **The user problem:** Not enough dopamine for routine tasks, "time blindness" (difficulty estimating how long things take), and a tendency to forget tasks if the app takes too many steps to capture them.
 - **The app concept:** A structured, gamified ADHD organizer. It offers an ultra-visual, clean interface where capturing a task takes only a second (or can be done by voice). To address time blindness, the app includes visual countdown timers and rewards users with game mechanics (points, badges, or avatar unlocks) whenever they complete a task.
-- **Monetization model:** Freemium with a subscription. Users can organize their day for free. Advanced features (such as mood and energy charts, interactive home-screen widgets, or white-noise sounds designed for focus) are available for around €4.99 per month.
+- **Proposed monetization model:** Freemium with a subscription. Users can organize their day for free. Potential advanced features include mood and energy charts, interactive home-screen widgets, and focus white noise; the roughly €4.99 monthly price is a hypothesis that still needs validation.
 
 ---
 
@@ -61,7 +61,7 @@ To keep the pet system sustainable to build for the initial MVP, use simple prog
   - Show digital confetti on screen.
   - Award the egg "focus points" until it hatches into a small creature.
 - **Level progression:** Each task awards 10, 20, or 40 points according to its selected size. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels. The avatar displays its current level and celebrates each level-up, and the bar shows progress toward the next level. Accumulated points are retained for level calculations, but the lifetime total is hidden to keep the screen simple.
-- **First-run personalization:** On first launch, users choose a name and one of six animals, shown in a two-row, three-column grid. The home-screen greeting shows only their name; the selected animal appears in the progress card and celebrates level-ups. The animals are named Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), and Panda.
+- **Welcome and first-run personalization:** On first launch, users see an introduction to FocusPaws as a daily organizer designed for people with ADHD and neurodivergent minds, followed by the free-version limitations. They then choose a name and one of six animals, shown in a two-row, three-column grid. The home-screen greeting shows only their name; the selected animal appears in the progress card and celebrates level-ups. The animals are named Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), and Panda.
 
 ### Android app icon
 
@@ -246,20 +246,21 @@ Do not offer durations above 45 or 60 minutes; encourage users to split larger t
 - Selecting a profile opens an intermediate hub with large buttons to change the pet, edit the name, open the pet room/sticker album, and access tasks.
 - **Finish day** returns to the selector without deleting tasks, points, rewards, or daily history.
 - Progress is stored by profile ID. When upgrading from the single-profile version, the existing profile retains the previous record; new profiles start with separate progress.
-- Creating additional users is prepared for the paid version: the option is visible during development and hidden by default in release builds. A build can enable it with `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; the free version shows only the default profile and does not delete the other profiles' data. This flag does not replace purchase integration.
+- The free version allows one profile, keeps tasks, Focus Mode, rewards, and daily progress on Home, and hides the pet room/album. Additional profiles and the album are paid-feature candidates. They can be previewed during development; `FOCUSPAWS_PREMIUM_MULTIUSER` and `FOCUSPAWS_PREMIUM_STICKER_ALBUM` are enabled with `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true` and `--dart-define=FOCUSPAWS_PREMIUM_STICKER_ALBUM=true`, and are off by default in release. Hiding these features does not delete their data. These flags do not replace purchase integration.
+- The `version-prueba-v1.0.0` tag marks the free trial baseline. This version stays stable and only accepts bug fixes; new features are developed on the `version-completa` branch, created from that baseline.
 
 ---
 
 ## Persistence system
 
-The app should preserve progress between sessions and present accumulated effort visually through a pet room or sticker album rather than spreadsheet-like statistics. During development, all progress views remain available; the album can be hidden for the free tier later.
+The app should preserve progress between sessions and present accumulated effort visually through a pet room or sticker album rather than spreadsheet-like statistics. In the free version, daily progress stays visible on Home while the room and album are hidden.
 
 ### Agreed implementation decisions
 
 - The first collectible format is a sticker album. Each sticker represents a local calendar day on which the user completed three distinct tasks. Completions from Home and Focus Mode both count.
 - Daily progress resets when the device's local date changes. Completing the same task again on the same day does not count it twice.
 - Tasks, points, task sizes, bonus rest, snacks, daily completions, and sticker-unlock dates are saved together in the local progress record. Older records remain compatible; tasks without dated history are not attributed to past days.
-- The album is visible during development. The `FocusPawsFeatures.showStickerAlbum` flag can hide it later while keeping daily progress visible on Home.
+- The album is visible during development and hidden by default in release. Enable it with `--dart-define=FOCUSPAWS_PREMIUM_STICKER_ALBUM=true`; daily progress remains visible on Home.
 
 ---
 

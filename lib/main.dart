@@ -17,12 +17,16 @@ void main() {
 }
 
 abstract final class FocusPawsFeatures {
-  static const showStickerAlbum = true;
+  static const showStickerAlbum = bool.fromEnvironment(
+    'FOCUSPAWS_PREMIUM_STICKER_ALBUM',
+    defaultValue: kDebugMode,
+  );
   static const tasksPerDailySticker = 3;
   static const allowMultipleProfiles = bool.fromEnvironment(
     'FOCUSPAWS_PREMIUM_MULTIUSER',
     defaultValue: kDebugMode,
   );
+  static const isFreeVersion = !showStickerAlbum && !allowMultipleProfiles;
 }
 
 String _localDateKey(DateTime date) =>
@@ -50,6 +54,8 @@ class FocusPawsApp extends StatelessWidget {
     this.clock = DateTime.now,
     this.startWithSelectedProfile = false,
     this.allowMultipleProfiles,
+    this.showFreeVersionNotice,
+    this.freeVersionNoticeStore,
     this.restBreakNotificationService,
   });
 
@@ -60,6 +66,8 @@ class FocusPawsApp extends StatelessWidget {
   final DateTime Function() clock;
   final bool startWithSelectedProfile;
   final bool? allowMultipleProfiles;
+  final bool? showFreeVersionNotice;
+  final FreeVersionNoticeStore? freeVersionNoticeStore;
 
   static const _forest = Color(0xFF006B70);
   static const _ink = Color(0xFF1E3029);
@@ -101,6 +109,8 @@ class FocusPawsApp extends StatelessWidget {
         clock: clock,
         startWithSelectedProfile: startWithSelectedProfile,
         allowMultipleProfiles: allowMultipleProfiles,
+        showFreeVersionNotice: showFreeVersionNotice,
+        freeVersionNoticeStore: freeVersionNoticeStore,
         restBreakNotificationService:
             restBreakNotificationService ??
             AndroidRestBreakNotificationService(),
@@ -114,6 +124,25 @@ class FocusPawsApp extends StatelessWidget {
 abstract interface class RestBreakNotificationService {
   Future<bool> showRestTimer(DateTime endsAt);
   Future<void> cancelRestTimer();
+}
+
+abstract interface class FreeVersionNoticeStore {
+  Future<bool> hasSeenNotice();
+  Future<void> markNoticeSeen();
+}
+
+class SharedPreferencesFreeVersionNoticeStore
+    implements FreeVersionNoticeStore {
+  static const _seenKey = 'free_version_notice_seen';
+
+  final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
+
+  @override
+  Future<bool> hasSeenNotice() async =>
+      await _preferences.getBool(_seenKey) ?? false;
+
+  @override
+  Future<void> markNoticeSeen() => _preferences.setBool(_seenKey, true);
 }
 
 class AndroidRestBreakNotificationService
@@ -733,6 +762,8 @@ class HomePage extends StatefulWidget {
     this.clock = DateTime.now,
     this.startWithSelectedProfile = false,
     this.allowMultipleProfiles,
+    this.showFreeVersionNotice,
+    this.freeVersionNoticeStore,
   });
 
   final UserProfileStore profileStore;
@@ -743,6 +774,8 @@ class HomePage extends StatefulWidget {
   final DateTime Function() clock;
   final bool startWithSelectedProfile;
   final bool? allowMultipleProfiles;
+  final bool? showFreeVersionNotice;
+  final FreeVersionNoticeStore? freeVersionNoticeStore;
 
   @override
   State<HomePage> createState() => _HomePageShellState();
@@ -764,9 +797,13 @@ class _HomePageShellState extends State<HomePage> {
   List<UserProfile> _profiles = [];
   UserProfile? _selectedProfile;
   _AppScreen _screen = _AppScreen.loading;
+  bool _freeVersionNoticeScheduled = false;
 
   bool get _allowMultipleProfiles =>
       widget.allowMultipleProfiles ?? FocusPawsFeatures.allowMultipleProfiles;
+
+  bool get _showFreeVersionNotice =>
+      widget.showFreeVersionNotice ?? FocusPawsFeatures.isFreeVersion;
 
   List<UserProfile> get _availableProfiles {
     if (_allowMultipleProfiles || _profiles.length <= 1) return _profiles;
@@ -815,6 +852,95 @@ class _HomePageShellState extends State<HomePage> {
     } else {
       _screen = _AppScreen.launcher;
     }
+  }
+
+  void _scheduleFreeVersionNotice() {
+    if (!_showFreeVersionNotice || _freeVersionNoticeScheduled) return;
+    _freeVersionNoticeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_showFreeVersionNoticeIfNeeded());
+    });
+  }
+
+  Future<void> _showFreeVersionNoticeIfNeeded() async {
+    final noticeStore =
+        widget.freeVersionNoticeStore ??
+        SharedPreferencesFreeVersionNoticeStore();
+    if (await noticeStore.hasSeenNotice()) return;
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Bienvenido a FocusPaws'),
+          content: Text.rich(
+            TextSpan(
+              style: Theme.of(context).textTheme.bodyLarge,
+              children: const [
+                TextSpan(
+                  text: 'FocusPaws',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(
+                  text:
+                      ' no es una aplicación de productividad más. Es un '
+                      'organizador diario diseñado desde cero ',
+                ),
+                TextSpan(
+                  text:
+                      'para mentes con TDAH (Trastorno por Déficit de '
+                      'Atención e Hiperactividad) y neurodivergentes',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(
+                  text:
+                      '. Aquí no encontrarás menús complejos, gráficos '
+                      'aburridos ni alarmas estresantes. Encontrarás un '
+                      'espacio limpio, visual y un compañero de equipo: tu '
+                      'propia mascota virtual.',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Continuar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Versión gratuita de FocusPaws'),
+          content: const Text(
+            'Esta versión permite usar un perfil y conserva tu progreso diario. '
+            'No incluye perfiles adicionales ni la habitación y el álbum de '
+            'pegatinas. La versión completa, que saldrá próximamente, incluirá '
+            'esas funciones.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+
+    await noticeStore.markNoticeSeen();
   }
 
   Future<void> _saveNewProfile(UserProfile profile) async {
@@ -895,6 +1021,7 @@ class _HomePageShellState extends State<HomePage> {
       if (snapshot.hasError) {
         return _ProfileErrorScreen(onRetry: _retryProfiles);
       }
+      _scheduleFreeVersionNotice();
       _initializeProfiles(snapshot.requireData);
       switch (_screen) {
         case _AppScreen.loading:

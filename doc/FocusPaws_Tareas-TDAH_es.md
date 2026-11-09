@@ -3,7 +3,7 @@ Bienestar y Foco para Mentes TDAH
 Las aplicaciones de productividad del mercado (tipo Notion o Todoist) fallan con las personas con TDAH (Trastorno por Déficit de Atención e Hiperactividad) porque son demasiado aburridas o complejas, lo que les causa frustración.
 • El problema del usuario: Falta de dopamina al realizar tareas rutinarias, "ceguera temporal" (no calcular cuánto tardan las cosas) y tendencia a olvidar las tareas si la app requiere demasiados pasos para apuntarlas.
 • La App que puedes crear: Un Organizador Gamificado Estricto para TDAH. Una app de tareas con una interfaz ultra-visual y limpia, donde apuntar una tarea tome solo un segundo (o por nota de voz). Para combatir la ceguera temporal, la app incluye temporizadores visuales de cuenta atrás y premia al usuario con mecánicas de juego (puntos, medallas o desbloqueo de avatares) cada vez que completa una tarea.
-• Modelo de Monetización (Cómo cobras): Freemium con suscripción. La app permite organizar el día a día gratis. Las funciones avanzadas (como gráficos de humor y energía, widgets visuales interactivos para la pantalla de inicio o sonidos de ruido blanco diseñados para la concentración) se desbloquean por unos 4,99€ al mes.
+• Modelo de monetización propuesto: Freemium con suscripción. La app permite organizar el día a día gratis. Como posibles funciones avanzadas se plantean gráficos de humor y energía, widgets visuales interactivos y sonidos de ruido blanco; el precio de unos 4,99 € al mes es solo una hipótesis pendiente de validar.
 
 ------------------------------
 
@@ -57,7 +57,7 @@ Para que el sistema de la mascota funcione y sea sostenible para ti a nivel de d
 	• La pantalla lanza confeti digital parpadeante.
 	• El huevo recibe "puntos de enfoque" hasta que eclosiona en una pequeña criatura.
 • Progresión por niveles: Cada tarea otorga puntos según su tamaño: 10, 20 o 40. Los niveles 1 y 2 requieren 150 puntos cada uno; los niveles 3 a 5, 180 cada uno; y los niveles 6 a 8, 210 cada uno. El requisito aumenta 30 puntos cada tres niveles. La insignia del animal elegido muestra el nivel actual, celebra cada subida y la barra muestra el avance y objetivo del siguiente nivel. Los puntos acumulados se conservan para calcular niveles, pero el total de por vida no se muestra para mantener la pantalla sencilla.
-• Personalización inicial: En el primer inicio, la persona elige su nombre y uno de seis animales, organizados en dos filas de tres. El saludo de la pantalla principal muestra solo su nombre; el animal seleccionado aparece en el recuadro de progreso y es quien celebra las subidas de nivel. Los animales se llaman Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) y Panda.
+• Bienvenida y personalización inicial: En el primer inicio, se presenta FocusPaws como un organizador diario diseñado para personas con TDAH y neurodivergentes, junto con las funciones que no están disponibles en la versión gratuita. Después, la persona elige su nombre y uno de seis animales, organizados en dos filas de tres. El saludo de la pantalla principal muestra solo su nombre; el animal seleccionado aparece en el recuadro de progreso y es quien celebra las subidas de nivel. Los animales se llaman Nori (perro), Kitty (gato), Foxy (zorro), Bunny (conejo), Bruno (oso) y Panda.
 
 ### Icono de la aplicación Android
 
@@ -265,7 +265,8 @@ Con esta solución el sistema queda blindado contra las trampas del cerebro
 - Al seleccionar un perfil se abre un panel intermedio con botones grandes para cambiar el animal, editar el nombre, abrir la habitación/álbum y acceder a las tareas.
 - «Finalizar día» vuelve al selector sin borrar tareas, puntos, recompensas ni el historial diario.
 - Los datos de progreso se guardan por identificador de perfil. Al actualizar desde la versión de un solo perfil, el perfil existente conserva el registro anterior; los perfiles nuevos empiezan con progreso independiente.
-- La creación de usuarios adicionales queda preparada para la versión de pago: está visible en desarrollo y oculta de forma predeterminada en compilaciones release. La compilación de desarrollo puede habilitarla con `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; en la versión gratuita solo aparece el perfil predeterminado y los demás datos no se eliminan. Esta bandera todavía no sustituye la integración de compra.
+- La versión gratuita permite un perfil, mantiene las tareas, el modo foco, las recompensas y el progreso diario en Inicio, y oculta la habitación/álbum. Los perfiles adicionales y el álbum son candidatos de pago. Se pueden previsualizar durante el desarrollo; las banderas `FOCUSPAWS_PREMIUM_MULTIUSER` y `FOCUSPAWS_PREMIUM_STICKER_ALBUM` se activan con `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true` y `--dart-define=FOCUSPAWS_PREMIUM_STICKER_ALBUM=true`, y están desactivadas por defecto en release. Los datos no se eliminan al ocultar estas funciones. Las banderas no sustituyen la integración de compra.
+- La etiqueta `version-prueba-v1.0.0` fija la base de la versión de prueba gratuita. Esta versión se mantiene estable y solo admite correcciones de errores; las nuevas funcionalidades se desarrollan en la rama `version-completa`, creada desde esa base.
 
 ------------------------------------
 
@@ -276,7 +277,7 @@ Con esta solución el sistema queda blindado contra las trampas del cerebro
 El cerebro con TDAH sufre a menudo de falta de memoria prospectiva y sensación de "no estar avanzando". Guardar el historial de forma persistente (usando bases de datos locales como Room o DataStore en Android de forma nativa, o Hive/Isar si usas Flutter) es clave para el tratamiento psicológico.
 
 Vamos a guardar estos datos para que se recuperen en cada sesión y no se pierdan con el día a día.
-Aquí vamos a prepararlo de tal manera que en la versión gratuita no se muestre la habitación que hablamos a continuación pero si que guarde el progreso en la pantalla principal.
+En la versión gratuita no se muestra la habitación ni el álbum, pero el progreso diario sí permanece en la pantalla principal.
 
 Vamos a dejarlo preparado para que cuando esté la aplicación desarrollada completamente se puedan bloquear los aspectos definidos para la versión de pago. Las iremos definiendo a medida que avance el desarrollo, mientras estamos en desarrollo necesitamos verlo todo.
 
@@ -289,7 +290,7 @@ Vamos a dejarlo preparado para que cuando esté la aplicación desarrollada comp
 - Se implementa un Álbum de Pegatinas. Cada pegatina representa un día local en el que se completaron tres tareas distintas; las finalizaciones desde Inicio y desde el Modo Foco cuentan.
 - El avance del día se reinicia al cambiar la fecha local. Volver a marcar la misma tarea como completada no suma más de una vez en ese día.
 - Las tareas, puntos, tamaños, saldo de descanso, snacks, finalizaciones diarias y fechas de pegatinas desbloqueadas se guardan juntos en el registro local. Los datos antiguos siguen siendo compatibles; no se atribuyen a fechas pasadas las tareas que no tenían historial diario.
-- El álbum se muestra durante el desarrollo. La bandera `FocusPawsFeatures.showStickerAlbum` permite ocultarlo posteriormente; el progreso diario permanece visible en Inicio.
+- El álbum se muestra durante el desarrollo y se oculta por defecto en release. Se puede habilitar con `--dart-define=FOCUSPAWS_PREMIUM_STICKER_ALBUM=true`; el progreso diario permanece visible en Inicio.
 
 ------------------------------------
 

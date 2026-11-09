@@ -14,11 +14,17 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 - The main-screen header shows the transparent circular icon without text next to FocusPaws.
 - Rest notifications use the existing Android `ic_launcher_foreground` resource.
 
+## Versions and maintenance
+
+- The Git tag `version-prueba-v1.0.0` identifies the complete free trial version described here and serves as its stable baseline.
+- The trial version will receive no new features. It will only be changed to fix bugs, keeping those fixes separate from development of the complete version.
+- The `version-completa` branch starts from this same baseline. New planned features will be developed there without changing the trial version.
+
 ### Profiles
 
 - Onboarding displays the round, transparent FocusPaws logo with its name (cropped from the same circular Android 12 splash asset to remove excess transparent padding) and lets users choose a name and one of six animals in a two-row, three-column grid; the profile is saved locally. The greeting shows the person's name and current weekday, and the selected animal appears in the progress card: Nori (dog), Kitty (cat), Foxy (fox), Bunny (rabbit), Bruno (bear), or Panda.
 - Reopening the app shows a profile selector. Each profile opens an intermediate hub for editing its name or pet, opening its album, and entering its tasks. **Finish day** returns to the selector without deleting tasks or rewards.
-- Creating additional profiles is available in development and can be enabled in a build with `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true`; release builds show only the default free profile. Each profile keeps its progress separate.
+- The free version allows one profile and shows daily progress on Home; it does not show the pet room or sticker album. On first launch, users see a one-time welcome introducing FocusPaws for people with ADHD and neurodivergent minds, followed by a notice describing these limitations. Additional profiles and the album can be previewed during development and enabled in builds with `--dart-define=FOCUSPAWS_PREMIUM_MULTIUSER=true` and `--dart-define=FOCUSPAWS_PREMIUM_STICKER_ALBUM=true`. Both options are off by default in release builds, so `flutter build apk --release` produces the free version without extra flags; progress and other profiles' data are not deleted.
 
 ### Tasks and home screen
 
@@ -40,7 +46,7 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 
 - The visual timer uses the task's estimated duration, shows no numeric countdown, and can be paused/resumed. A 2-minute micro-break automatically returns to focus.
 - The bonus-rest balance and snacks appear with the pet's progress. The card shows the current level and progress to the next level, not lifetime points. Levels 1 and 2 require 150 points each; levels 3–5 require 180 each; and levels 6–8 require 210 each. The requirement increases by 30 points every three levels.
-- Daily progress counts distinct tasks completed on the local calendar date. Completing three tasks in one day unlocks a sticker; the history and sticker album persist with the rest of the progress. The album is visible during development and can later be hidden behind a feature flag while daily progress stays on Home. Day changes are detected both while the app stays open and when it is reopened.
+- Daily progress counts distinct tasks completed on the local calendar date. Completing three tasks in one day unlocks a sticker; the history and sticker album persist with the rest of the progress. The free version keeps daily progress visible on Home but hides the pet room and album. Day changes are detected both while the app stays open and when it is reopened.
 - The name and animal are saved per profile. Tasks, points, bonus rest, snacks, petting count, and daily history are kept in a separate local record for each profile. Existing data is migrated to the original profile during an update so it is not mixed with new users' progress.
 
 ### Entering a rest break
@@ -55,7 +61,7 @@ A Flutter mobile app designed to help people with ADHD organize tasks in a simpl
 
 ## Remaining work to align with the product brief
 
-- Integrate per-user paid access for creating additional profiles; it is currently controlled by a build flag.
+- Integrate purchases and paid access for additional profiles and the pet room/album; these are currently controlled by build flags (`FOCUSPAWS_PREMIUM_MULTIUSER` and `FOCUSPAWS_PREMIUM_STICKER_ALBUM`).
 - Complete the reward celebration with pet animation, confetti, and sound.
 - Review the pet's visual presentation and mood/energy states against the proposal.
 - Evaluate a subtle notification when the app is backgrounded during focus, respecting permissions and system behavior.

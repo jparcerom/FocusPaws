@@ -4,6 +4,81 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_paws/main.dart';
 
 void main() {
+  testWidgets('shows the welcome and free-version notices once', (
+    tester,
+  ) async {
+    final noticeStore = _MemoryFreeVersionNoticeStore();
+    final profileStore = _MemoryUserProfileStore();
+    final progressStore = _MemoryFocusTasksProgressStore();
+
+    await tester.pumpWidget(
+      FocusPawsApp(
+        profileStore: profileStore,
+        progressStore: progressStore,
+        showFreeVersionNotice: true,
+        freeVersionNoticeStore: noticeStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bienvenido a FocusPaws'), findsOneWidget);
+    expect(
+      find.textContaining('no es una aplicación de productividad más'),
+      findsOneWidget,
+    );
+    expect(noticeStore.seen, isFalse);
+    await tester.tap(find.text('Continuar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bienvenido a FocusPaws'), findsNothing);
+    expect(find.text('Versión gratuita de FocusPaws'), findsOneWidget);
+    expect(
+      find.textContaining('No incluye perfiles adicionales'),
+      findsOneWidget,
+    );
+    expect(noticeStore.seen, isFalse);
+    await tester.tap(find.text('Entendido'));
+    await tester.pumpAndSettle();
+    expect(noticeStore.seen, isTrue);
+
+    await tester.pumpWidget(
+      FocusPawsApp(
+        key: const ValueKey('restarted-free-app'),
+        profileStore: profileStore,
+        progressStore: progressStore,
+        showFreeVersionNotice: true,
+        freeVersionNoticeStore: noticeStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bienvenido a FocusPaws'), findsNothing);
+    expect(find.text('Versión gratuita de FocusPaws'), findsNothing);
+  });
+
+  testWidgets('gates the sticker album with its premium feature flag', (
+    tester,
+  ) async {
+    final profileStore = _MemoryUserProfileStore(
+      profile: const UserProfile(name: 'Alex', avatar: UserAvatar.cat),
+    );
+
+    await tester.pumpWidget(
+      FocusPawsApp(
+        profileStore: profileStore,
+        progressStore: _MemoryFocusTasksProgressStore(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('select-profile-default')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('open-album-option')),
+      FocusPawsFeatures.showStickerAlbum ? findsOneWidget : findsNothing,
+    );
+  });
+
   testWidgets('sets up and remembers a personalized profile', (tester) async {
     final profileStore = _MemoryUserProfileStore();
     final progressStore = _MemoryFocusTasksProgressStore();
@@ -1491,6 +1566,18 @@ class _MemoryUserProfileStore implements UserProfileCollectionStore {
   @override
   Future<void> saveProfiles(List<UserProfile> profiles) async {
     this.profiles = List.of(profiles);
+  }
+}
+
+class _MemoryFreeVersionNoticeStore implements FreeVersionNoticeStore {
+  bool seen = false;
+
+  @override
+  Future<bool> hasSeenNotice() async => seen;
+
+  @override
+  Future<void> markNoticeSeen() async {
+    seen = true;
   }
 }
 
